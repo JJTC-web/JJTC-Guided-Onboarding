@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Your Progress{% endblock %}
+{% block content %}
+<h1>Your Progress</h1>
+
+<div class="progress-bar-outer">
+  <div class="progress-bar-inner" style="width:{{ percent }}%;"></div>
+</div>
+<p style="font-weight:600;">{{ percent }}% complete</p>
+
+{% if all_complete %}
+  <div class="flash" style="background:#dff5e1;border-color:#1e7a34;color:#1e7a34;">
+    All required steps are complete. Your file has moved to active production &mdash; our team will begin your work.
+  </div>
+{% endif %}
+
+<p style="font-weight:600;margin-top:24px;">Completed</p>
+{% for s in completed %}
+  <div class="checklist-item">
+    <div class="step-title">{{ s.title }}</div>
+    <span class="badge badge-complete">
+      {{ statuses[s.id].completed_at[:10] if statuses[s.id].completed_at else '' }}
+    </span>
+  </div>
+{% else %}
+  <p style="color:#6b6b6b;font-size:0.9rem;">Nothing completed yet.</p>
+{% endfor %}
+
+{% if remaining %}
+  <p style="font-weight:600;margin-top:24px;">Remaining</p>
+  {% for s in remaining %}
+    <div class="checklist-item">
+      <div class="step-title">{{ s.title }}</div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<a href="{{ url_for('checklist') }}" class="btn btn-gold">Back to Checklist</a>
+{% endblock %}

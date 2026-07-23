@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Your Checklist{% endblock %}
+{% block content %}
+<h1>Your Onboarding Checklist</h1>
+<p class="subtitle">{{ situation_label }}</p>
+
+{% for item in items %}
+  <div class="checklist-item {% if item.status == 'locked' %}locked{% endif %}">
+    {% if item.status == 'locked' %}
+      <div>
+        <div class="step-title">{{ item.title }}</div>
+        <div class="step-desc">Unlocks after the previous step is complete.</div>
+      </div>
+      <span class="badge badge-locked">Locked</span>
+    {% else %}
+      <a href="{{ url_for('step_detail', step_id=item.id) }}" style="flex:1;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div class="step-title">{{ item.title }}</div>
+          <div class="step-desc">{{ item.description }}</div>
+        </div>
+        {% if item.status == 'complete' %}
+          <span class="badge badge-complete">Complete</span>
+        {% elif item.status == 'pending_verification' %}
+          <span class="badge badge-pending">Verifying</span>
+        {% else %}
+          <span class="badge badge-action">Action Required</span>
+        {% endif %}
+      </a>
+    {% endif %}
+  </div>
+{% endfor %}
+
+<a href="{{ url_for('progress') }}" class="btn btn-gold">View Progress Summary</a>
+{% endblock %}

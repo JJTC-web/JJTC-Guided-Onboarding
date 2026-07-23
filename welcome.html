@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Welcome{% endblock %}
+{% block content %}
+<h1>Welcome to Jehovah Jireh Tax Consultants</h1>
+<p class="subtitle">Your Vision Is Our Mission.</p>
+
+<div style="background:#000;border-radius:10px;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:#DBB312;font-weight:600;">
+  Welcome Video
+</div>
+
+<p style="margin-top:20px;font-size:0.95rem;color:#333;">
+  Before we begin your work, we'll walk you through a few required onboarding
+  steps &mdash; a short intake, your engagement letter, connecting your
+  Financial Cents account, and uploading the documents we need. Your file
+  moves into active work only once every required step is complete.
+</p>
+
+<form method="POST" action="{{ url_for('welcome_watched') }}">
+  <button type="submit">Begin My Next Steps</button>
+</form>
+{% endblock %}

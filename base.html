@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}JJTC Guided Onboarding{% endblock %}</title>
+<style>
+  :root {
+    --black: #000000;
+    --gold: #DBB312;
+    --amber: #9E680C;
+    --bg: #FAF8F3;
+    --card: #FFFFFF;
+    --text: #1a1a1a;
+    --muted: #6b6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    padding: 36px;
+    max-width: 560px;
+    width: 100%;
+    border-top: 4px solid var(--gold);
+  }
+  h1 { font-size: 1.5rem; color: var(--black); margin-top: 0; }
+  p.subtitle { color: var(--muted); margin-top: -6px; margin-bottom: 24px; }
+  label { display: block; font-weight: 600; margin-top: 18px; margin-bottom: 6px; }
+  input[type="text"], input[type="email"], textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+    font-size: 1rem; font-family: inherit;
+  }
+  button, .btn {
+    margin-top: 24px; width: 100%; background: var(--black); color: white;
+    border: none; padding: 14px; border-radius: 10px; font-size: 1rem;
+    font-weight: 600; cursor: pointer; text-align: center; text-decoration: none;
+    display: block; transition: background 0.15s ease;
+  }
+  button:hover, .btn:hover { background: var(--amber); }
+  .btn-gold { background: var(--gold); color: var(--black); }
+  .btn-gold:hover { background: var(--amber); color: white; }
+  a { color: var(--amber); }
+  .flash { background: #fdf2d0; border: 1px solid var(--gold); padding: 10px 14px;
+    border-radius: 8px; margin-bottom: 16px; font-size: 0.9rem; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-complete { background: #dff5e1; color: #1e7a34; }
+  .badge-action { background: #fdf2d0; color: var(--amber); }
+  .badge-locked { background: #eee; color: #999; }
+  .badge-pending { background: #dde8fb; color: #2554a8; }
+  .checklist-item {
+    padding: 14px 0; border-bottom: 1px solid #eee; display: flex;
+    justify-content: space-between; align-items: center;
+  }
+  .checklist-item:last-child { border-bottom: none; }
+  .checklist-item.locked { opacity: 0.55; }
+  .checklist-item a { text-decoration: none; color: inherit; }
+  .step-title { font-weight: 600; }
+  .step-desc { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+  .progress-bar-outer { background: #eee; border-radius: 999px; height: 14px; overflow: hidden; margin: 16px 0; }
+  .progress-bar-inner { background: var(--gold); height: 100%; }
+</style>
+</head>
+<body>
+<div class="card">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endif %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Tell Us Your Situation{% endblock %}
+{% block content %}
+<h1>What's Your Situation?</h1>
+<p class="subtitle">We'll build your checklist based on what applies to you.</p>
+
+<form method="POST">
+  {% for key, s in situations.items() %}
+    <label style="display:flex;align-items:center;gap:10px;font-weight:500;border:1px solid #ddd;border-radius:8px;padding:12px;margin-top:10px;cursor:pointer;">
+      <input type="radio" name="situation" value="{{ key }}" required style="width:auto;">
+      {{ s.label }}
+    </label>
+  {% endfor %}
+  <button type="submit">Continue</button>
+</form>
+{% endblock %}

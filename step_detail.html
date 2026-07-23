@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ step.title }}{% endblock %}
+{% block content %}
+<h1>{{ step.title }}</h1>
+<p class="subtitle">{{ step.description }}</p>
+
+{% if step.type == 'intake' %}
+  <form method="POST">
+    <label>Full Name</label>
+    <input type="text" name="full_name" required>
+    <label>Email</label>
+    <input type="email" name="email" required>
+    <label>Phone</label>
+    <input type="text" name="phone">
+    <label>Business Name (if applicable)</label>
+    <input type="text" name="business_name">
+    <button type="submit">Submit Intake</button>
+  </form>
+
+{% elif step.type == 'esign' %}
+  {% if status == 'pending_verification' %}
+    <p>Your document has been sent for signature. Refresh this page once you've signed to continue.</p>
+    <a href="{{ url_for('step_detail', step_id=step.id) }}" class="btn btn-gold">Check Status</a>
+  {% else %}
+    <form method="POST">
+      <label>Full Name</label>
+      <input type="text" name="name" required>
+      <label>Email</label>
+      <input type="email" name="email" required>
+      <p style="font-size:0.85rem;color:#6b6b6b;">We'll send your document to this email for signature via PandaDoc.</p>
+      <button type="submit">Send for Signature</button>
+    </form>
+  {% endif %}
+
+{% elif step.type == 'financial_cents' %}
+  <form method="POST">
+    <label>Email Used for Financial Cents</label>
+    <input type="email" name="email" required>
+    <p style="font-size:0.85rem;color:#6b6b6b;">We'll verify your Financial Cents connection using this email.</p>
+    <button type="submit">Verify Connection</button>
+  </form>
+
+{% elif step.type == 'upload' %}
+  <p style="font-size:0.9rem;font-weight:600;">Required documents:</p>
+  <ul style="font-size:0.9rem;color:#333;">
+    {% for doc in step.required_docs %}<li>{{ doc }}</li>{% endfor %}
+  </ul>
+  {% if uploaded_files %}
+    <p style="font-size:0.85rem;color:#1e7a34;">Already uploaded: {{ uploaded_files|map(attribute='filename')|join(', ') }}</p>
+  {% endif %}
+  <form method="POST" enctype="multipart/form-data">
+    <label>Upload Files</label>
+    <input type="file" name="documents" multiple required>
+    <button type="submit">Upload</button>
+  </form>
+{% endif %}
+
+<p style="margin-top:20px;"><a href="{{ url_for('checklist') }}">&larr; Back to checklist</a></p>
+{% endblock %}

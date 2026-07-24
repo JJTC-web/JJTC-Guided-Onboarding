@@ -1,20 +1,72 @@
 import os
-import json
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+
+import db
+import situations
+from integrations import pandadoc, financial_cents
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
-DATA_FILE = "responses.json"
+db.init_db()
 
 
-def load_responses():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {"skills": [], "nps": []}
+def current_client_id():
+    if "client_id" not in session:
+        session["client_id"] = db.create_client()
+    return session["client_id"]
+
+
+@app.route("/")
+def welcome():
+    current_client_id()
+    return render_template("welcome.html")
+
+
+@app.route("/welcome/watched", methods=["POST"])
+def welcome_watched():
+    client_id = current_client_id()
+    db.mark_video_watched(client_id)
+    return redirect(url_for("situation_selector"))
+
+
+@app.route("/situation", methods=["GET", "POST"])
+def situation_selector():
+    client_id = current_client_id()
+    if request.method == "POST":
+        situation_key = request.form.get("situation")
+        if situation_key not in situations.SITUATIONS:
+            flash("Please select a valid situation.")
+            return redirect(url_for("situation_selector"))
+        step_ids = [s["id"] for s in situations.get_steps(situation_key)]
+        db.set_situation(client_id, situation_key, step_ids)
+        return redirect(url_for("checklist"))
+
+    return render_template("situation.html", situations=situations.SITUATIONS)
+
+
+@app.route("/checklist")
+def checklist():
+    client_id = current_client_id()
+    client = db.get_client(client_id)
+    if not client or not client["situation"]:
+        return redirect(url_for("situation_selector"))
+
+    steps = situations.get_steps(client["situation"])
+    step_ids = [s["id"] for s in steps]
+    statuses = db.get_step_statuses(client_id)
+    current_step_id = db.get_current_step_id(client_id, step_ids)
+
+    checklist_items = []
+    for step in steps:
+        status = statuses.get(step["id"], {}).get("status", "locked")
+        checklist_items.append({**step, "status": status})
+
+    all_complete = current_step_id is None
+    return render_template(
+        "checklist.html",
+        items=checklist_items,
+        current_step_id=current_step_id,
     return {"skills": [], "nps": []}
 
 

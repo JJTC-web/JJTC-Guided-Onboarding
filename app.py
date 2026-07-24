@@ -67,60 +67,125 @@ def checklist():
         "checklist.html",
         items=checklist_items,
         current_step_id=current_step_id,
-    return {"skills": [], "nps": []}
+        all_complete=all_complete,
+        situation_label=situations.SITUATIONS[client["situation"]]["label"],
+    )
 
 
-def save_response(kind, entry):
-    data = load_responses()
-    entry["timestamp"] = datetime.utcnow().isoformat()
-    data[kind].append(entry)
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+@app.route("/step/<step_id>", methods=["GET", "POST"])
+def step_detail(step_id):
+    client_id = current_client_id()
+    client = db.get_client(client_id)
+    if not client or not client["situation"]:
+        return redirect(url_for("situation_selector"))
 
+    steps = situations.get_steps(client["situation"])
+    step_ids = [s["id"] for s in steps]
+    statuses = db.get_step_statuses(client_id)
 
-@app.route("/")
-def home():
-    return render_template("home.html")
+    current_step_id = db.get_current_step_id(client_id, step_ids)
+    step_status = statuses.get(step_id, {}).get("status", "locked")
+    if step_status == "locked":
+        flash("That step isn't unlocked yet.")
+        return redirect(url_for("checklist"))
 
+    step = situations.get_step(client["situation"], step_id)
 
-@app.route("/skills", methods=["GET", "POST"])
-def skills():
     if request.method == "POST":
-        entry = {
-            "name": request.form.get("name", ""),
-            "coding": request.form.get("coding"),
-            "problem_solving": request.form.get("problem_solving"),
-            "ai_tools": request.form.get("ai_tools"),
-            "confidence": request.form.get("confidence"),
-            "comments": request.form.get("comments", ""),
-        }
-        save_response("skills", entry)
-        return redirect(url_for("thanks"))
-    return render_template("skills.html")
+        if step["type"] == "intake":
+            db.complete_step(client_id, step_id, step_ids)
+            return redirect(url_for("checklist"))
+
+        elif step["type"] == "upload":
+            files = request.files.getlist("documents")
+            for f in files:
+                if f and f.filename:
+                    upload_dir = os.path.join("uploads", client_id)
+                    os.makedirs(upload_dir, exist_ok=True)
+                    f.save(os.path.join(upload_dir, f.filename))
+                    db.add_uploaded_file(client_id, step_id, f.filename)
+            uploaded = db.get_uploaded_files(client_id, step_id)
+            if uploaded:
+                db.complete_step(client_id, step_id, step_ids)
+                return redirect(url_for("checklist"))
+            flash("Please upload at least one file.")
+
+        elif step["type"] == "esign":
+            client_name = request.form.get("name", "Client")
+            client_email = request.form.get("email")
+            try:
+                document_id = pandadoc.create_document_from_template(step_id, client_name, client_email)
+                statuses = db.get_step_statuses(client_id)
+                conn = db.get_db()
+                conn.execute(
+                    "UPDATE step_status SET status = 'pending_verification', external_ref = ? "
+                    "WHERE client_id = ? AND step_id = ?",
+                    (document_id, client_id, step_id),
+                )
+                conn.commit()
+                conn.close()
+                flash("Document sent to your email for signature. Refresh this page once you've signed.")
+            except Exception as e:
+                flash(f"Couldn't send document for signature: {e}")
+
+        elif step["type"] == "financial_cents":
+            client_email = request.form.get("email")
+            try:
+                connected, fc_client = financial_cents.is_connected_and_current(client_email)
+                if connected:
+                    db.complete_step(client_id, step_id, step_ids, external_ref=str(fc_client.get("id")))
+                    return redirect(url_for("checklist"))
+                else:
+                    flash("We couldn't find your Financial Cents record yet. Please try again shortly or contact us.")
+            except Exception as e:
+                flash(f"Couldn't verify Financial Cents connection: {e}")
+
+        return redirect(url_for("step_detail", step_id=step_id))
+
+    if step["type"] == "esign" and step_status == "pending_verification":
+        external_ref = statuses.get(step_id, {}).get("external_ref")
+        if external_ref:
+            try:
+                if pandadoc.is_signed(external_ref):
+                    db.complete_step(client_id, step_id, step_ids, external_ref=external_ref)
+                    return redirect(url_for("checklist"))
+            except Exception:
+                pass
+
+    uploaded_files = db.get_uploaded_files(client_id, step_id) if step["type"] == "upload" else []
+
+    return render_template(
+        "step_detail.html",
+        step=step,
+        status=step_status,
+        uploaded_files=uploaded_files,
+    )
 
 
-@app.route("/nps", methods=["GET", "POST"])
-def nps():
-    if request.method == "POST":
-        entry = {
-            "name": request.form.get("name", ""),
-            "score": request.form.get("score"),
-            "comments": request.form.get("comments", ""),
-        }
-        save_response("nps", entry)
-        return redirect(url_for("thanks"))
-    return render_template("nps.html")
+@app.route("/progress")
+def progress():
+    client_id = current_client_id()
+    client = db.get_client(client_id)
+    if not client or not client["situation"]:
+        return redirect(url_for("situation_selector"))
 
+    steps = situations.get_steps(client["situation"])
+    step_ids = [s["id"] for s in steps]
+    statuses = db.get_step_statuses(client_id)
 
-@app.route("/thanks")
-def thanks():
-    return render_template("thanks.html")
+    completed = [s for s in steps if statuses.get(s["id"], {}).get("status") == "complete"]
+    remaining = [s for s in steps if statuses.get(s["id"], {}).get("status") != "complete"]
+    pct = int((len(completed) / len(steps)) * 100) if steps else 0
 
-
-@app.route("/results")
-def results():
-    data = load_responses()
-    return render_template("results.html", data=data)
+    return render_template(
+        "progress.html",
+        completed=completed,
+        remaining=remaining,
+        percent=pct,
+        statuses=statuses,
+        all_complete=(len(remaining) == 0),
+        client_status=client["status"],
+    )
 
 
 if __name__ == "__main__":

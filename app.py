@@ -1,4 +1,7 @@
+import hmac
 import os
+from functools import wraps
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 
 import db
@@ -15,6 +18,21 @@ def current_client_id():
     if "client_id" not in session:
         session["client_id"] = db.create_client()
     return session["client_id"]
+
+
+def _safe_next_url(next_url):
+    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return url_for("admin_dashboard")
+
+
+def require_admin(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("is_admin"):
+            return redirect(url_for("admin_login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
 
 
 @app.route("/")
@@ -209,13 +227,33 @@ def submit_nps():
     return redirect(url_for("progress"))
 
 
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        admin_password = os.environ.get("ADMIN_PASSWORD")
+        submitted = request.form.get("password", "")
+        if admin_password and hmac.compare_digest(submitted, admin_password):
+            session["is_admin"] = True
+            return redirect(_safe_next_url(request.form.get("next")))
+        flash("Incorrect password.")
+    return render_template("admin_login.html", next=request.args.get("next", ""))
+
+
+@app.route("/admin/logout", methods=["POST"])
+def admin_logout():
+    session.pop("is_admin", None)
+    return redirect(url_for("admin_login"))
+
+
 @app.route("/admin")
+@require_admin
 def admin_dashboard():
     summary = db.get_nps_summary()
     return render_template("admin.html", summary=summary)
 
 
 @app.route("/admin/digest", methods=["POST"])
+@require_admin
 def admin_send_digest():
     admin_email = os.environ.get("ADMIN_EMAIL")
     if not admin_email:

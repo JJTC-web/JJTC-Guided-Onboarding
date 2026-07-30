@@ -27,5 +27,8 @@
   <form method="POST" action="{{ url_for('admin_send_digest') }}">
     <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Send test digest</button>
   </form>
+  <form method="POST" action="{{ url_for('admin_logout') }}" style="margin-top:14px;">
+    <button type="submit" style="background:none;border:none;color:#6b6b6b;text-decoration:underline;cursor:pointer;font-size:0.8rem;padding:0;">Log out</button>
+  </form>
 </div>
 {% endblock %}

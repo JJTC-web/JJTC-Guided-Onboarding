@@ -14,6 +14,8 @@ from html import escape
 
 import requests
 
+from integrations import google_translate
+
 RESEND_API_BASE = "https://api.resend.com"
 
 
@@ -46,10 +48,17 @@ def send_nps_digest(summary, to_email):
     most recent comments) to the given admin address.
     """
     if summary["recent_comments"]:
-        comments_html = "".join(
-            f"<li><strong>{c['score']}/10</strong> &mdash; {escape(c['comment'])}</li>"
-            for c in summary["recent_comments"]
-        )
+        items = []
+        for c in summary["recent_comments"]:
+            text = escape(c.get("comment_en") or c["comment"])
+            note = ""
+            lang = c.get("comment_lang")
+            if lang and lang != "en":
+                lang_name = escape(google_translate.language_name(lang))
+                original = escape(c["comment"])
+                note = f' <em>(translated from {lang_name}; original: &ldquo;{original}&rdquo;)</em>'
+            items.append(f"<li><strong>{c['score']}/10</strong> &mdash; {text}{note}</li>")
+        comments_html = "".join(items)
     else:
         comments_html = "<li>No comments yet.</li>"
 

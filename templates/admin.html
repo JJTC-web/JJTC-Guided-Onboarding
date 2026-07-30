@@ -17,7 +17,12 @@
 {% for c in summary.recent_comments %}
   <div class="checklist-item" style="display:block;">
     <div class="step-title">{{ c.score }}/10</div>
-    <div class="step-desc">{{ c.comment }}</div>
+    <div class="step-desc">{{ c.comment_en or c.comment }}</div>
+    {% if c.comment_lang and c.comment_lang != 'en' %}
+      <div style="font-size:0.75rem;color:#999;margin-top:4px;">
+        Translated from {{ c.comment_lang | language_name }} &middot; original: &ldquo;{{ c.comment }}&rdquo;
+      </div>
+    {% endif %}
   </div>
 {% else %}
   <p style="color:#6b6b6b;font-size:0.9rem;">No comments yet.</p>

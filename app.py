@@ -6,10 +6,11 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 
 import db
 import situations
-from integrations import pandadoc, financial_cents, resend_email
+from integrations import pandadoc, financial_cents, resend_email, google_translate
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+app.jinja_env.filters["language_name"] = google_translate.language_name
 
 db.init_db()
 
@@ -222,7 +223,14 @@ def submit_nps():
         return redirect(url_for("progress"))
 
     comment = request.form.get("comment", "").strip()
-    db.add_nps_response(client_id, score, comment)
+    comment_en, comment_lang = None, None
+    if comment:
+        try:
+            comment_en, comment_lang = google_translate.translate_to_english(comment)
+        except Exception:
+            pass  # the dashboard/digest will just fall back to the original text
+
+    db.add_nps_response(client_id, score, comment, comment_en, comment_lang)
     flash("Thanks for your feedback!")
     return redirect(url_for("progress"))
 

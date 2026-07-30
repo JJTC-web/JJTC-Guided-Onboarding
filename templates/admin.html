@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block content %}
+<h1>Admin Dashboard</h1>
+<p class="subtitle">NPS feedback from clients going through onboarding.</p>
+
+<div class="checklist-item">
+  <div class="step-title">NPS Score</div>
+  <span class="badge badge-complete">{{ summary.score }}</span>
+</div>
+<div class="checklist-item">
+  <div class="step-title">Responses</div>
+  <span class="badge badge-pending">{{ summary.response_count }}</span>
+</div>
+
+<p style="font-weight:600;margin-top:24px;">Most Recent Comments</p>
+{% for c in summary.recent_comments %}
+  <div class="checklist-item" style="display:block;">
+    <div class="step-title">{{ c.score }}/10</div>
+    <div class="step-desc">{{ c.comment }}</div>
+  </div>
+{% else %}
+  <p style="color:#6b6b6b;font-size:0.9rem;">No comments yet.</p>
+{% endfor %}
+
+<div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;text-align:center;">
+  <form method="POST" action="{{ url_for('admin_send_digest') }}">
+    <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Send test digest</button>
+  </form>
+</div>
+{% endblock %}

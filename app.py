@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 
 import db
 import situations
-from integrations import pandadoc, financial_cents
+from integrations import pandadoc, financial_cents, resend_email
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -188,7 +188,47 @@ def progress():
         statuses=statuses,
         all_complete=(len(remaining) == 0),
         client_status=client["status"],
+        nps_submitted=db.has_nps_response(client_id),
     )
+
+
+@app.route("/nps", methods=["POST"])
+def submit_nps():
+    client_id = current_client_id()
+    try:
+        score = int(request.form.get("score"))
+        if not 0 <= score <= 10:
+            raise ValueError
+    except (TypeError, ValueError):
+        flash("Please select a score between 0 and 10.")
+        return redirect(url_for("progress"))
+
+    comment = request.form.get("comment", "").strip()
+    db.add_nps_response(client_id, score, comment)
+    flash("Thanks for your feedback!")
+    return redirect(url_for("progress"))
+
+
+@app.route("/admin")
+def admin_dashboard():
+    summary = db.get_nps_summary()
+    return render_template("admin.html", summary=summary)
+
+
+@app.route("/admin/digest", methods=["POST"])
+def admin_send_digest():
+    admin_email = os.environ.get("ADMIN_EMAIL")
+    if not admin_email:
+        flash("Set the ADMIN_EMAIL environment variable to send the digest.")
+        return redirect(url_for("admin_dashboard"))
+
+    summary = db.get_nps_summary()
+    try:
+        resend_email.send_nps_digest(summary, admin_email)
+        flash(f"Digest sent to {admin_email}.")
+    except Exception as e:
+        flash(f"Couldn't send digest: {e}")
+    return redirect(url_for("admin_dashboard"))
 
 
 if __name__ == "__main__":

@@ -12,6 +12,26 @@
   <div class="flash" style="background:#dff5e1;border-color:#1e7a34;color:#1e7a34;">
     All required steps are complete. Your file has moved to active production &mdash; our team will begin your work.
   </div>
+
+  {% if not nps_submitted %}
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid #eee;">
+      <p style="font-weight:600;margin-bottom:10px;">How likely are you to recommend JJTC to a friend or colleague?</p>
+      <form method="POST" action="{{ url_for('submit_nps') }}">
+        <div style="display:flex;justify-content:space-between;gap:4px;margin-bottom:6px;">
+          {% for i in range(11) %}
+            <label style="flex:1;text-align:center;font-weight:400;margin:0;font-size:0.8rem;">
+              <input type="radio" name="score" value="{{ i }}" required style="display:block;margin:0 auto 4px;">{{ i }}
+            </label>
+          {% endfor %}
+        </div>
+        <p style="display:flex;justify-content:space-between;font-size:0.75rem;color:#6b6b6b;margin:0 0 12px;">
+          <span>Not likely</span><span>Very likely</span>
+        </p>
+        <textarea name="comment" rows="3" placeholder="Any comments? (optional)"></textarea>
+        <button type="submit" class="btn btn-gold">Submit Feedback</button>
+      </form>
+    </div>
+  {% endif %}
 {% endif %}
 
 <p style="font-weight:600;margin-top:24px;">Completed</p>

@@ -1,12 +1,16 @@
+import hmac
 import os
+from functools import wraps
+
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 
 import db
 import situations
-from integrations import pandadoc, financial_cents
+from integrations import pandadoc, financial_cents, resend_email, google_translate
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+app.jinja_env.filters["language_name"] = google_translate.language_name
 
 db.init_db()
 
@@ -15,6 +19,21 @@ def current_client_id():
     if "client_id" not in session:
         session["client_id"] = db.create_client()
     return session["client_id"]
+
+
+def _safe_next_url(next_url):
+    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return url_for("admin_dashboard")
+
+
+def require_admin(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("is_admin"):
+            return redirect(url_for("admin_login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
 
 
 @app.route("/")
@@ -188,7 +207,74 @@ def progress():
         statuses=statuses,
         all_complete=(len(remaining) == 0),
         client_status=client["status"],
+        nps_submitted=db.has_nps_response(client_id),
     )
+
+
+@app.route("/nps", methods=["POST"])
+def submit_nps():
+    client_id = current_client_id()
+    try:
+        score = int(request.form.get("score"))
+        if not 0 <= score <= 10:
+            raise ValueError
+    except (TypeError, ValueError):
+        flash("Please select a score between 0 and 10.")
+        return redirect(url_for("progress"))
+
+    comment = request.form.get("comment", "").strip()
+    comment_en, comment_lang = None, None
+    if comment:
+        try:
+            comment_en, comment_lang = google_translate.translate_to_english(comment)
+        except Exception:
+            pass  # the dashboard/digest will just fall back to the original text
+
+    db.add_nps_response(client_id, score, comment, comment_en, comment_lang)
+    flash("Thanks for your feedback!")
+    return redirect(url_for("progress"))
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        admin_password = os.environ.get("ADMIN_PASSWORD")
+        submitted = request.form.get("password", "")
+        if admin_password and hmac.compare_digest(submitted, admin_password):
+            session["is_admin"] = True
+            return redirect(_safe_next_url(request.form.get("next")))
+        flash("Incorrect password.")
+    return render_template("admin_login.html", next=request.args.get("next", ""))
+
+
+@app.route("/admin/logout", methods=["POST"])
+def admin_logout():
+    session.pop("is_admin", None)
+    return redirect(url_for("admin_login"))
+
+
+@app.route("/admin")
+@require_admin
+def admin_dashboard():
+    summary = db.get_nps_summary()
+    return render_template("admin.html", summary=summary)
+
+
+@app.route("/admin/digest", methods=["POST"])
+@require_admin
+def admin_send_digest():
+    admin_email = os.environ.get("ADMIN_EMAIL")
+    if not admin_email:
+        flash("Set the ADMIN_EMAIL environment variable to send the digest.")
+        return redirect(url_for("admin_dashboard"))
+
+    summary = db.get_nps_summary()
+    try:
+        resend_email.send_nps_digest(summary, admin_email)
+        flash(f"Digest sent to {admin_email}.")
+    except Exception as e:
+        flash(f"Couldn't send digest: {e}")
+    return redirect(url_for("admin_dashboard"))
 
 
 if __name__ == "__main__":

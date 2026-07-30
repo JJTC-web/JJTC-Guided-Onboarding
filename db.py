@@ -42,8 +42,25 @@ def init_db():
             uploaded_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS nps_responses (
+            id TEXT PRIMARY KEY,
+            client_id TEXT,
+            score INTEGER,
+            comment TEXT,
+            created_at TEXT
+        )
+    """)
+    _ensure_column(conn, "nps_responses", "comment_en", "TEXT")
+    _ensure_column(conn, "nps_responses", "comment_lang", "TEXT")
     conn.commit()
     conn.close()
+
+
+def _ensure_column(conn, table, column, coltype):
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
 
 def create_client():
@@ -144,3 +161,52 @@ def get_uploaded_files(client_id, step_id):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def add_nps_response(client_id, score, comment, comment_en=None, comment_lang=None):
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO nps_responses (id, client_id, score, comment, comment_en, comment_lang, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), client_id, score, comment, comment_en, comment_lang, datetime.utcnow().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def has_nps_response(client_id):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT 1 FROM nps_responses WHERE client_id = ? LIMIT 1", (client_id,)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def get_nps_summary(recent_comments_limit=3):
+    """
+    Returns the current NPS summary: the NPS score (% promoters - % detractors,
+    scores 0-10), total response count, and the N most recent comments.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT score, comment, comment_en, comment_lang, created_at FROM nps_responses ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    responses = [dict(r) for r in rows]
+    response_count = len(responses)
+
+    if response_count:
+        promoters = sum(1 for r in responses if r["score"] >= 9)
+        detractors = sum(1 for r in responses if r["score"] <= 6)
+        score = round((promoters - detractors) / response_count * 100)
+    else:
+        score = 0
+
+    recent_comments = [r for r in responses if r["comment"]][:recent_comments_limit]
+
+    return {
+        "score": score,
+        "response_count": response_count,
+        "recent_comments": recent_comments,
+    }

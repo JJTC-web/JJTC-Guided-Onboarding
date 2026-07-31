@@ -38,7 +38,8 @@ def send_email(to, subject, html):
         "html": html,
     }
     resp = requests.post(f"{RESEND_API_BASE}/emails", json=payload, headers=_headers())
-    resp.raise_for_status()
+    if not resp.ok:
+        raise RuntimeError(f"Resend API error {resp.status_code}: {resp.text}")
     return resp.json()
 
 

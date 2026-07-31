@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Thank You{% endblock %}
+{% block content %}
+<h1>Thank You</h1>
+<p class="subtitle">Your feedback helps us improve the onboarding experience.</p>
+
+<div class="flash" style="background:#dff5e1;border-color:#1e7a34;color:#1e7a34;">
+  We've received your feedback. Thanks for taking the time to share it with us!
+</div>
+
+<a href="{{ url_for('progress') }}" class="btn btn-gold">Back to Your Progress</a>
+{% endblock %}

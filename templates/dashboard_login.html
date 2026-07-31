@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Login{% endblock %}
+{% block content %}
+<h1>Dashboard Login</h1>
+<p class="subtitle">Sign in with your admin account to view NPS results.</p>
+
+<form method="POST">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="email">Email</label>
+  <input type="email" id="email" name="email" required autofocus>
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" required>
+  <button type="submit" class="btn btn-gold">Log In</button>
+</form>
+{% endblock %}

@@ -44,7 +44,11 @@ def sign_in_with_password(email, password):
         json={"email": email, "password": password},
     )
     if not resp.ok:
-        raise RuntimeError("Incorrect email or password.")
+        try:
+            detail = resp.json().get("error_description") or resp.json().get("msg") or resp.text
+        except ValueError:
+            detail = resp.text
+        raise RuntimeError(f"Supabase sign-in failed: {detail}")
     return resp.json()["user"]["email"]
 
 

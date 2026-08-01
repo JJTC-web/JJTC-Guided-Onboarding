@@ -1,4 +1,3 @@
-import hmac
 import os
 from functools import wraps
 
@@ -6,7 +5,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 
 import db
 import situations
-from integrations import pandadoc, financial_cents, resend_email, google_translate
+from integrations import pandadoc, financial_cents, resend_email, google_translate, supabase_auth
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -24,14 +23,14 @@ def current_client_id():
 def _safe_next_url(next_url):
     if next_url and next_url.startswith("/") and not next_url.startswith("//"):
         return next_url
-    return url_for("admin_dashboard")
+    return url_for("dashboard")
 
 
 def require_admin(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get("is_admin"):
-            return redirect(url_for("admin_login", next=request.path))
+            return redirect(url_for("dashboard_login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
 
@@ -231,42 +230,63 @@ def submit_nps():
             pass  # the dashboard/digest will just fall back to the original text
 
     db.add_nps_response(client_id, score, comment, comment_en, comment_lang)
-    flash("Thanks for your feedback!")
-    return redirect(url_for("progress"))
+    return redirect(url_for("nps_thank_you"))
 
 
-@app.route("/admin/login", methods=["GET", "POST"])
-def admin_login():
+@app.route("/nps/thank-you")
+def nps_thank_you():
+    return render_template("thank_you.html")
+
+
+@app.route("/dashboard/login", methods=["GET", "POST"])
+def dashboard_login():
     if request.method == "POST":
-        admin_password = os.environ.get("ADMIN_PASSWORD")
-        submitted = request.form.get("password", "")
-        if admin_password and hmac.compare_digest(submitted, admin_password):
-            session["is_admin"] = True
-            return redirect(_safe_next_url(request.form.get("next")))
-        flash("Incorrect password.")
-    return render_template("admin_login.html", next=request.args.get("next", ""))
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        next_url = request.form.get("next", "")
+
+        try:
+            authenticated_email = supabase_auth.sign_in_with_password(email, password)
+        except Exception:
+            flash("Incorrect email or password.")
+            return redirect(url_for("dashboard_login", next=next_url))
+
+        try:
+            if not supabase_auth.is_admin(authenticated_email):
+                flash("Your account doesn't have dashboard access.")
+                return redirect(url_for("dashboard_login", next=next_url))
+        except Exception as e:
+            flash(f"Couldn't verify dashboard access: {e}")
+            return redirect(url_for("dashboard_login", next=next_url))
+
+        session["is_admin"] = True
+        session["admin_email"] = authenticated_email
+        return redirect(_safe_next_url(next_url))
+
+    return render_template("dashboard_login.html", next=request.args.get("next", ""))
 
 
-@app.route("/admin/logout", methods=["POST"])
-def admin_logout():
+@app.route("/dashboard/logout", methods=["POST"])
+def dashboard_logout():
     session.pop("is_admin", None)
-    return redirect(url_for("admin_login"))
+    session.pop("admin_email", None)
+    return redirect(url_for("dashboard_login"))
 
 
-@app.route("/admin")
+@app.route("/dashboard")
 @require_admin
-def admin_dashboard():
+def dashboard():
     summary = db.get_nps_summary()
-    return render_template("admin.html", summary=summary)
+    return render_template("dashboard.html", summary=summary)
 
 
-@app.route("/admin/digest", methods=["POST"])
+@app.route("/dashboard/digest", methods=["POST"])
 @require_admin
-def admin_send_digest():
+def dashboard_send_digest():
     admin_email = os.environ.get("ADMIN_EMAIL")
     if not admin_email:
         flash("Set the ADMIN_EMAIL environment variable to send the digest.")
-        return redirect(url_for("admin_dashboard"))
+        return redirect(url_for("dashboard"))
 
     summary = db.get_nps_summary()
     try:
@@ -274,7 +294,7 @@ def admin_send_digest():
         flash(f"Digest sent to {admin_email}.")
     except Exception as e:
         flash(f"Couldn't send digest: {e}")
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("dashboard"))
 
 
 if __name__ == "__main__":

@@ -247,8 +247,8 @@ def dashboard_login():
 
         try:
             authenticated_email = supabase_auth.sign_in_with_password(email, password)
-        except Exception:
-            flash("Incorrect email or password.")
+        except Exception as e:
+            flash(str(e))
             return redirect(url_for("dashboard_login", next=next_url))
 
         try:

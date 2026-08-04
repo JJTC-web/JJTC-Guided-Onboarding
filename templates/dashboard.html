@@ -58,6 +58,9 @@
   <form method="POST" action="{{ url_for('poll_scope_triggers') }}">
     <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Run scope-trigger check now</button>
   </form>
+  <form method="POST" action="{{ url_for('annual_reengagement_check') }}" style="margin-top:14px;">
+    <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Run annual re-engagement check now</button>
+  </form>
   <form method="POST" action="{{ url_for('dashboard_send_digest') }}" style="margin-top:14px;">
     <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Send test digest</button>
   </form>

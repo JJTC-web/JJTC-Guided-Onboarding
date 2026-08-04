@@ -143,6 +143,15 @@ def get_client_by_email(email):
     return dict(row) if row else None
 
 
+def get_active_clients():
+    """Clients who've completed onboarding - the "recurring clients" the
+    annual portal-compliance checkpoint (Section 2.2) runs against."""
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM clients WHERE status = 'active'").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def set_situation(client_id, situation_key, step_ids):
     conn = get_db()
     conn.execute("UPDATE clients SET situation = ? WHERE id = ?", (situation_key, client_id))
@@ -317,6 +326,16 @@ def get_open_intake_flags():
     return [dict(r) for r in rows]
 
 
+def get_open_intake_flags_for_client(client_id):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM intake_flags WHERE client_id = ? AND resolved_at IS NULL ORDER BY created_at DESC",
+        (client_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def resolve_intake_flag(flag_id):
     conn = get_db()
     conn.execute(
@@ -334,6 +353,21 @@ def has_signed_engagement_letter(client_id, service_code, year):
     row = conn.execute(
         "SELECT 1 FROM engagement_letters WHERE client_id = ? AND service_code = ? "
         "AND year = ? AND status = 'signed' LIMIT 1",
+        (client_id, service_code, year),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def has_pending_or_signed_engagement_letter(client_id, service_code, year):
+    """
+    Whether this year's letter/addendum for this service code is already
+    in flight (signed or awaiting signature) - used to avoid re-sending the
+    annual TAX-PREP renewal to a client who's already mid-signature on it.
+    """
+    conn = get_db()
+    row = conn.execute(
+        "SELECT 1 FROM engagement_letters WHERE client_id = ? AND service_code = ? AND year = ? LIMIT 1",
         (client_id, service_code, year),
     ).fetchone()
     conn.close()

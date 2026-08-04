@@ -46,7 +46,12 @@ TEMPLATE_IDS = {
 # these is a short PandaDoc addendum referencing the master engagement
 # letter, generated on demand when a client's requested work isn't covered
 # by an already-signed engagement letter for the current year.
+#
+# TAX-PREP reuses the standing engagement letter template (the same one the
+# "engagement_letter" onboarding step sends) - the annual portal-compliance
+# checkpoint (Section 2.2) uses this to send that year's renewal letter.
 SERVICE_CODE_TEMPLATE_IDS = {
+    "TAX-PREP": os.environ.get("PANDADOC_ENGAGEMENT_LETTER_TEMPLATE_ID"),
     "BOOKKEEPING": os.environ.get("PANDADOC_BOOKKEEPING_TEMPLATE_ID"),
     "CLEANUP": os.environ.get("PANDADOC_CLEANUP_TEMPLATE_ID"),
     "ANNUAL-REPORT": os.environ.get("PANDADOC_ANNUAL_REPORT_TEMPLATE_ID"),

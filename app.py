@@ -42,6 +42,32 @@ def ensure_engagement_letter(client_id, service_code, client_name, client_email)
     return False, document_id
 
 
+def check_portal_upload(client_id, source, email, full_name):
+    """
+    Confirms via the Financial Cents API - not self-reported - that a
+    client's documents are landing in their portal, and flags an anomalous
+    batch size as possible bookkeeping/cleanup scope (Section 2.2). Shared
+    by the onboarding "Portal Upload Confirmed" step and the annual
+    portal-compliance checkpoint, so both apply the same anomaly rule.
+    Returns (fc_client, file_count); fc_client is None if no Financial
+    Cents record was found.
+    """
+    fc_client, file_count = financial_cents.get_portal_upload_count(email)
+    if not fc_client:
+        return None, 0
+    db.set_portal_upload_confirmed(client_id, file_count)
+    if file_count >= situations.FILE_COUNT_ANOMALY_THRESHOLD:
+        db.add_intake_flag(
+            client_id, source, "file_count_anomaly", file_count=file_count,
+            detail=f"{file_count} files in one portal batch - possible cleanup/bookkeeping scope.",
+        )
+        try:
+            ensure_engagement_letter(client_id, "BOOKKEEPING", full_name or "Client", email)
+        except Exception:
+            pass  # staff can still see the flag and follow up manually
+    return fc_client, file_count
+
+
 def _safe_next_url(next_url):
     if next_url and next_url.startswith("/") and not next_url.startswith("//"):
         return next_url
@@ -169,6 +195,11 @@ def step_detail(step_id):
                 )
                 conn.commit()
                 conn.close()
+                if step_id == "engagement_letter":
+                    # Tracked in engagement_letters too so the annual
+                    # portal-compliance checkpoint (Section 2.2) knows this
+                    # year's standing TAX-PREP letter is already in flight.
+                    db.create_pending_addendum(client_id, "TAX-PREP", current_year(), document_id)
                 flash("Document sent to your email for signature. Refresh this page once you've signed.")
             except Exception as e:
                 flash(f"Couldn't send document for signature: {e}")
@@ -191,32 +222,18 @@ def step_detail(step_id):
                 flash("We don't have your email on file yet. Please complete the intake step first.")
                 return redirect(url_for("step_detail", step_id=step_id))
             try:
-                fc_client, file_count = financial_cents.get_portal_upload_count(email)
+                fc_client, file_count = check_portal_upload(
+                    client_id, step_id, email, client.get("full_name"),
+                )
                 if not fc_client:
                     flash("We couldn't find your Financial Cents portal record yet. Please try again shortly or contact us.")
                 else:
-                    db.set_portal_upload_confirmed(client_id, file_count)
                     if file_count >= situations.FILE_COUNT_ANOMALY_THRESHOLD:
-                        db.add_intake_flag(
-                            client_id, step_id, "file_count_anomaly", file_count=file_count,
-                            detail=f"{file_count} files in one portal batch - possible cleanup/bookkeeping scope.",
+                        flash(
+                            f"You uploaded {file_count} files in this batch, which looks like bookkeeping/"
+                            "cleanup work rather than standard document intake. We're handling the paperwork "
+                            "for that scope separately - it starts once its addendum is signed and invoiced."
                         )
-                        try:
-                            covered, _ = ensure_engagement_letter(
-                                client_id, "BOOKKEEPING", client.get("full_name") or "Client", email,
-                            )
-                            if not covered:
-                                flash(
-                                    f"You uploaded {file_count} files in this batch, which looks like bookkeeping/"
-                                    "cleanup work rather than standard document intake. We've sent a short addendum "
-                                    "to your email for signature - that scope of work starts once it's signed and "
-                                    "invoiced."
-                                )
-                        except Exception as e:
-                            flash(
-                                f"You uploaded {file_count} files in this batch, which looks like bookkeeping/"
-                                f"cleanup work. Our team will follow up about a scope addendum. ({e})"
-                            )
                     db.complete_step(client_id, step_id, step_ids, external_ref=str(file_count))
                     return redirect(url_for("checklist"))
             except Exception as e:
@@ -231,6 +248,8 @@ def step_detail(step_id):
             try:
                 if pandadoc.is_signed(external_ref):
                     db.complete_step(client_id, step_id, step_ids, external_ref=external_ref)
+                    if step_id == "engagement_letter":
+                        db.mark_addendum_signed(external_ref)
                     return redirect(url_for("checklist"))
             except Exception:
                 pass  # fall through and just show current status
@@ -395,6 +414,62 @@ def poll_scope_triggers():
         flash(f"Scope-trigger poll complete - {processed} task(s) processed.")
         return redirect(url_for("dashboard"))
     return {"processed": processed}, 200
+
+
+@app.route("/tasks/annual-reengagement-check", methods=["POST"])
+def annual_reengagement_check():
+    """
+    Section 2.2's last bullet: recurring clients get an annual portal-
+    compliance checkpoint at re-engagement time, confirming (via Financial
+    Cents, not self-reported) that they're still uploading correctly before
+    that year's engagement letter goes out. Compliant clients get this
+    year's TAX-PREP letter generated and sent automatically; anyone with an
+    open intake flag or no live Financial Cents connection is held back and
+    flagged for staff review instead. Meant to run once a year at
+    re-engagement time via the same scheduler/secret as
+    poll_scope_triggers, or manually from the admin dashboard.
+    """
+    secret = os.environ.get("SCHEDULED_TASK_SECRET")
+    authorized = session.get("is_admin") or (
+        secret and hmac.compare_digest(request.headers.get("X-Task-Secret", ""), secret)
+    )
+    if not authorized:
+        return "unauthorized", 401
+
+    year = current_year()
+    sent = flagged = skipped = 0
+    for client in db.get_active_clients():
+        email = client.get("email")
+        if not email or db.has_pending_or_signed_engagement_letter(client["id"], "TAX-PREP", year):
+            skipped += 1
+            continue
+
+        try:
+            fc_client, _ = check_portal_upload(
+                client["id"], "annual_reengagement_check", email, client.get("full_name"),
+            )
+            if not fc_client or db.get_open_intake_flags_for_client(client["id"]):
+                db.add_intake_flag(
+                    client["id"], "annual_reengagement_check", "portal_compliance_review",
+                    detail=(
+                        "No live Financial Cents portal connection found."
+                        if not fc_client else
+                        "Open intake flag(s) on file - review before sending this year's engagement letter."
+                    ),
+                )
+                flagged += 1
+                continue
+
+            document_id = pandadoc.generate_addendum("TAX-PREP", client.get("full_name") or "Client", email)
+            db.create_pending_addendum(client["id"], "TAX-PREP", year, document_id)
+            sent += 1
+        except Exception:
+            flagged += 1
+
+    if session.get("is_admin"):
+        flash(f"Annual re-engagement check complete - {sent} letter(s) sent, {flagged} flagged for review, {skipped} skipped.")
+        return redirect(url_for("dashboard"))
+    return {"sent": sent, "flagged": flagged, "skipped": skipped}, 200
 
 
 @app.route("/progress")

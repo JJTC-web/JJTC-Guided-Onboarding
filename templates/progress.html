@@ -58,6 +58,11 @@
 <a href="{{ url_for('checklist') }}" class="btn btn-gold">Back to Checklist</a>
 
 <div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;">
+  <p style="font-size:0.85rem;color:#6b6b6b;">{{ policy.SCOPE_AND_PAYMENT_POLICY }}</p>
+  <a href="{{ url_for('request_service') }}" class="btn" style="background:#f0edf7;color:#000;margin-top:10px;">Request Additional Service</a>
+</div>
+
+<div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;">
   <p style="font-size:0.85rem;color:#6b6b6b;font-weight:600;margin-bottom:10px;">Need help with a step?</p>
   <a href="https://calendly.com/jjtcinfo/introduction-call" target="_blank" class="btn" style="background:#f0edf7;color:#000;margin-top:0;margin-bottom:10px;">Schedule an Introduction Call</a>
   <a href="https://calendly.com/jjtcinfo/business-consultations" target="_blank" class="btn" style="background:#f0edf7;color:#000;margin-top:0;">Schedule a Business Consultation</a>

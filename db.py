@@ -23,6 +23,10 @@ def init_db():
             created_at TEXT
         )
     """)
+    _ensure_column(conn, "clients", "full_name", "TEXT")
+    _ensure_column(conn, "clients", "email", "TEXT")
+    _ensure_column(conn, "clients", "portal_upload_confirmed_at", "TEXT")
+    _ensure_column(conn, "clients", "portal_file_count", "INTEGER")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS step_status (
             client_id TEXT,
@@ -53,6 +57,36 @@ def init_db():
     """)
     _ensure_column(conn, "nps_responses", "comment_en", "TEXT")
     _ensure_column(conn, "nps_responses", "comment_lang", "TEXT")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS engagement_letters (
+            id TEXT PRIMARY KEY,
+            client_id TEXT,
+            service_code TEXT,
+            year INTEGER,
+            status TEXT DEFAULT 'pending',
+            document_id TEXT,
+            sent_at TEXT,
+            signed_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS poll_state (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS intake_flags (
+            id TEXT PRIMARY KEY,
+            client_id TEXT,
+            step_id TEXT,
+            flag_type TEXT,
+            file_count INTEGER,
+            detail TEXT,
+            created_at TEXT,
+            resolved_at TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -90,6 +124,23 @@ def mark_video_watched(client_id):
     )
     conn.commit()
     conn.close()
+
+
+def set_client_contact(client_id, full_name, email):
+    conn = get_db()
+    conn.execute(
+        "UPDATE clients SET full_name = ?, email = ? WHERE id = ?",
+        (full_name, email, client_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_client_by_email(email):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM clients WHERE email = ?", (email,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def set_situation(client_id, situation_key, step_ids):
@@ -210,3 +261,141 @@ def get_nps_summary(recent_comments_limit=3):
         "response_count": response_count,
         "recent_comments": recent_comments,
     }
+
+
+# --- Scheduled poll state (6.5's `update_last_poll_time`) -------------------
+
+def get_last_scope_poll_time():
+    conn = get_db()
+    row = conn.execute("SELECT value FROM poll_state WHERE key = 'last_scope_poll_at'").fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_last_scope_poll_time(timestamp):
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO poll_state (key, value) VALUES ('last_scope_poll_at', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (timestamp,),
+    )
+    conn.commit()
+    conn.close()
+
+
+# --- Portal intake gate (2.2) -----------------------------------------------
+
+def set_portal_upload_confirmed(client_id, file_count):
+    conn = get_db()
+    conn.execute(
+        "UPDATE clients SET portal_upload_confirmed_at = ?, portal_file_count = ? WHERE id = ?",
+        (datetime.utcnow().isoformat(), file_count, client_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def add_intake_flag(client_id, step_id, flag_type, file_count=None, detail=None):
+    conn = get_db()
+    flag_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO intake_flags (id, client_id, step_id, flag_type, file_count, detail, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (flag_id, client_id, step_id, flag_type, file_count, detail, datetime.utcnow().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return flag_id
+
+
+def get_open_intake_flags():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM intake_flags WHERE resolved_at IS NULL ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def resolve_intake_flag(flag_id):
+    conn = get_db()
+    conn.execute(
+        "UPDATE intake_flags SET resolved_at = ? WHERE id = ?",
+        (datetime.utcnow().isoformat(), flag_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+# --- Engagement letter / addendum gate (Section 3 & 4) ----------------------
+
+def has_signed_engagement_letter(client_id, service_code, year):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT 1 FROM engagement_letters WHERE client_id = ? AND service_code = ? "
+        "AND year = ? AND status = 'signed' LIMIT 1",
+        (client_id, service_code, year),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def create_pending_addendum(client_id, service_code, year, document_id):
+    conn = get_db()
+    addendum_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO engagement_letters (id, client_id, service_code, year, status, document_id, sent_at) "
+        "VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+        (addendum_id, client_id, service_code, year, document_id, datetime.utcnow().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return addendum_id
+
+
+def get_pending_addendum_by_document(document_id):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM engagement_letters WHERE document_id = ? AND status = 'pending' LIMIT 1",
+        (document_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def mark_addendum_signed(document_id):
+    conn = get_db()
+    conn.execute(
+        "UPDATE engagement_letters SET status = 'signed', signed_at = ? WHERE document_id = ?",
+        (datetime.utcnow().isoformat(), document_id),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM engagement_letters WHERE document_id = ?", (document_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def count_signed_addenda_for_year(client_id, year, exclude_service_codes=()):
+    conn = get_db()
+    placeholders = ",".join("?" for _ in exclude_service_codes)
+    query = (
+        "SELECT COUNT(*) FROM engagement_letters WHERE client_id = ? AND year = ? AND status = 'signed'"
+    )
+    params = [client_id, year]
+    if exclude_service_codes:
+        query += f" AND service_code NOT IN ({placeholders})"
+        params.extend(exclude_service_codes)
+    count = conn.execute(query, params).fetchone()[0]
+    conn.close()
+    return count
+
+
+def list_pending_addenda():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM engagement_letters WHERE status = 'pending' ORDER BY sent_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

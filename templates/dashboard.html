@@ -28,8 +28,37 @@
   <p style="color:#6b6b6b;font-size:0.9rem;">No comments yet.</p>
 {% endfor %}
 
+<p style="font-weight:600;margin-top:24px;">Open Intake Flags</p>
+{% for f in open_flags %}
+  <div class="checklist-item" style="display:block;">
+    <div class="step-title">
+      {{ f.flag_type | replace('_', ' ') | title }}
+      {% if f.file_count %}&middot; {{ f.file_count }} files{% endif %}
+    </div>
+    <div class="step-desc">Client {{ f.client_id[:8] }} &middot; {{ f.detail }} &middot; {{ f.created_at[:10] }}</div>
+    <form method="POST" action="{{ url_for('dashboard_resolve_flag', flag_id=f.id) }}" style="margin-top:6px;">
+      <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.8rem;padding:0;">Mark resolved</button>
+    </form>
+  </div>
+{% else %}
+  <p style="color:#6b6b6b;font-size:0.9rem;">No open flags.</p>
+{% endfor %}
+
+<p style="font-weight:600;margin-top:24px;">Pending Addenda</p>
+{% for a in pending_addenda %}
+  <div class="checklist-item">
+    <div class="step-title">{{ service_labels.get(a.service_code, a.service_code) }}</div>
+    <span class="badge badge-pending">Client {{ a.client_id[:8] }} &middot; sent {{ a.sent_at[:10] }}</span>
+  </div>
+{% else %}
+  <p style="color:#6b6b6b;font-size:0.9rem;">No addenda awaiting signature.</p>
+{% endfor %}
+
 <div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;text-align:center;">
-  <form method="POST" action="{{ url_for('dashboard_send_digest') }}">
+  <form method="POST" action="{{ url_for('poll_scope_triggers') }}">
+    <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Run scope-trigger check now</button>
+  </form>
+  <form method="POST" action="{{ url_for('dashboard_send_digest') }}" style="margin-top:14px;">
     <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Send test digest</button>
   </form>
   <form method="POST" action="{{ url_for('dashboard_logout') }}" style="margin-top:14px;">

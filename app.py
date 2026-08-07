@@ -3,12 +3,17 @@ import os
 from datetime import datetime
 from functools import wraps
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+import psycopg2
+import resend
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 
 import db
 import policy
 import situations
 from integrations import pandadoc, financial_cents, resend_email, google_translate, supabase_auth
+
+resend.api_key = os.environ.get("RESEND_API_KEY")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
@@ -16,6 +21,10 @@ app.jinja_env.filters["language_name"] = google_translate.language_name
 app.jinja_env.globals["policy"] = policy
 
 db.init_db()
+
+
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL)
 
 
 def current_client_id():
@@ -82,6 +91,56 @@ def require_admin(view):
         return view(*args, **kwargs)
     return wrapped
 
+@app.route("/api/subscribe", methods=["POST"])
+def subscribe():
+    data = request.get_json()
+    email = data.get("email")
+    first_name = data.get("first_name", "")
+
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO subscribers (email, first_name, source)
+            VALUES (%s, %s, 'discipline_challenge')
+            ON CONFLICT (email) DO NOTHING
+            RETURNING id
+            """,
+            (email, first_name)
+        )
+        result = cur.fetchone()
+        conn.commit()
+
+        if result:
+            send_welcome_email(email, first_name)
+            cur.execute(
+                "UPDATE subscribers SET welcome_email_sent_at = NOW() WHERE email = %s",
+                (email,)
+            )
+            conn.commit()
+
+        return jsonify({"success": True}), 200
+    finally:
+        cur.close()
+        conn.close()
+
+def send_welcome_email(email, first_name):
+    resend.Emails.send({
+        "from": "Lady Emily <hello@jjtc.info>",
+        "to": email,
+        "subject": "You're in! Let's start your 31 days",
+        "html": f"""
+            <p>Hi {first_name or 'there'},</p>
+            <p>Welcome to the 31-Day Discipline Challenge — I'm so glad you're here.</p>
+            <p>Your Day 1 starts now: [Day 1 content / link]</p>
+            <p>Keep an eye on your inbox — I'll be with you each step of the way.</p>
+            <p>Here's to your next 31 days,<br>Lady Emily<br>Jehovah Jireh Tax Consultants</p>
+        """
+    })
 
 @app.route("/")
 def welcome():

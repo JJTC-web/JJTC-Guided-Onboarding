@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}31-Day Discipline Challenge{% endblock %}
+{% block content %}
+<h1>Join the 31-Day Discipline Challenge</h1>
+<p class="subtitle">One short workbook email a day, for 31 days.</p>
+
+<form id="signup-form">
+  <label>First Name</label>
+  <input type="text" name="first_name" id="first_name">
+  <label>Email</label>
+  <input type="email" name="email" id="email" required>
+  <button type="submit">Sign Me Up</button>
+</form>
+<p id="signup-message" style="margin-top:16px;font-size:0.9rem;"></p>
+
+<script>
+document.getElementById('signup-form').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  const button = e.target.querySelector('button');
+  const messageEl = document.getElementById('signup-message');
+  const email = document.getElementById('email').value.trim();
+  const firstName = document.getElementById('first_name').value.trim();
+
+  button.disabled = true;
+  messageEl.textContent = '';
+
+  try {
+    const resp = await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, first_name: firstName }),
+    });
+    const data = await resp.json();
+    if (resp.ok && data.success) {
+      messageEl.style.color = '#1e7a34';
+      messageEl.textContent = "You're in! Check your email to get started.";
+      e.target.reset();
+    } else {
+      messageEl.style.color = '#b3261e';
+      messageEl.textContent = data.error || 'Something went wrong. Please try again.';
+    }
+  } catch (err) {
+    messageEl.style.color = '#b3261e';
+    messageEl.textContent = 'Something went wrong. Please try again.';
+  } finally {
+    button.disabled = false;
+  }
+});
+</script>
+{% endblock %}

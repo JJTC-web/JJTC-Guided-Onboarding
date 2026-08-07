@@ -142,6 +142,104 @@ def send_welcome_email(email, first_name):
         """
     })
 
+
+@app.route("/challenge-signup")
+def challenge_signup():
+    return render_template("challenge_signup.html")
+
+
+CHALLENGE_LENGTH_DAYS = 31
+
+# Placeholder day-by-day content for the 31-Day Discipline Challenge workbook
+# emails. Fill in the real body per day here; any day without a specific
+# entry falls back to a generic placeholder so send_workbook_batch() never
+# breaks on a missing day.
+WORKBOOK_DAYS = {
+    # 1: {"subject": "Day 1: ...", "html": "<p>...</p>"},
+}
+
+
+def _workbook_content_for_day(day_number):
+    entry = WORKBOOK_DAYS.get(day_number)
+    if entry:
+        return entry
+    return {
+        "subject": f"Day {day_number} of your 31-Day Discipline Challenge",
+        "html": f"<p>Day {day_number} content coming soon — check back in your workbook.</p>",
+    }
+
+
+def _ensure_workbook_progress_column(cur):
+    cur.execute(
+        "ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS last_workbook_day_sent INTEGER NOT NULL DEFAULT 0"
+    )
+
+
+@app.route("/api/send-workbook-batch", methods=["POST"])
+def send_workbook_batch():
+    """
+    Meant to be triggered once a day by an external scheduler (see
+    env.example's SCHEDULED_TASK_SECRET). For each subscriber, sends
+    whichever challenge day matches how long they've been subscribed - at
+    most one email per subscriber per run, and never a day they've already
+    received, so a missed cron run doesn't cause a pile of backdated emails.
+    """
+    secret = os.environ.get("SCHEDULED_TASK_SECRET")
+    authorized = session.get("is_admin") or (
+        secret and hmac.compare_digest(request.headers.get("X-Task-Secret", ""), secret)
+    )
+    if not authorized:
+        return "unauthorized", 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    sent = skipped = errors = 0
+    try:
+        _ensure_workbook_progress_column(cur)
+        conn.commit()
+
+        cur.execute(
+            """
+            SELECT email, first_name, welcome_email_sent_at, last_workbook_day_sent
+            FROM subscribers
+            WHERE welcome_email_sent_at IS NOT NULL
+              AND last_workbook_day_sent < %s
+            """,
+            (CHALLENGE_LENGTH_DAYS,),
+        )
+        rows = cur.fetchall()
+
+        for email, first_name, welcome_email_sent_at, last_day_sent in rows:
+            current_day = (datetime.utcnow().date() - welcome_email_sent_at.date()).days + 1
+            current_day = min(current_day, CHALLENGE_LENGTH_DAYS)
+            if current_day <= last_day_sent:
+                skipped += 1
+                continue
+
+            content = _workbook_content_for_day(current_day)
+            try:
+                resend.Emails.send({
+                    "from": "Lady Emily <hello@jjtc.info>",
+                    "to": email,
+                    "subject": content["subject"],
+                    "html": content["html"],
+                })
+                cur.execute(
+                    "UPDATE subscribers SET last_workbook_day_sent = %s WHERE email = %s",
+                    (current_day, email),
+                )
+                conn.commit()
+                sent += 1
+            except Exception:
+                conn.rollback()
+                errors += 1
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"sent": sent, "skipped": skipped, "errors": errors}), 200
+
+
 @app.route("/")
 def welcome():
     current_client_id()

@@ -67,3 +67,63 @@ def is_connected_and_current(email):
     """
     client = find_client_by_email(email)
     return client is not None, client
+
+
+def get_portal_upload_count(email):
+    """
+    "Portal Upload Confirmed" verification (Section 2.2): pulls how many
+    files the client has uploaded to their Financial Cents client portal,
+    instead of relying on a self-reported checkbox.
+
+    NOTE: Financial Cents' public Open API docs do not (as of this writing)
+    document a dedicated "list uploaded files/documents for a client"
+    endpoint. This assumes a `/clients/{id}/documents` collection matching
+    the shape of their other list endpoints (`{"data": [...]}`) - confirm
+    the real endpoint against the current API docs before going live and
+    adjust the request below if it differs.
+
+    Returns (client, file_count). client is None if no Financial Cents
+    record exists yet for this email.
+    """
+    client = find_client_by_email(email)
+    if not client:
+        return None, 0
+    resp = requests.get(f"{FC_API_BASE}/clients/{client['id']}/documents", headers=_headers())
+    resp.raise_for_status()
+    documents = resp.json().get("data", [])
+    return client, len(documents)
+
+
+def get_completed_client_tasks(since=None):
+    """
+    Polls completed client-portal tasks/checklist items, used to detect
+    scope-triggering requests a client makes inside their own portal (e.g.
+    checking "I need help sorting these - bookkeeping cleanup") - Section
+    6.5's `check_for_scope_triggers`.
+
+    NOTE: stubbed against a plausible `/client_tasks` collection - confirm
+    the real endpoint/field names against Financial Cents' current Open API
+    docs before wiring this up to run on a schedule.
+    """
+    params = {"completed_since": since} if since else {}
+    resp = requests.get(f"{FC_API_BASE}/client_tasks", params=params, headers=_headers())
+    resp.raise_for_status()
+    return resp.json().get("data", [])
+
+
+def create_invoice_for_service(fc_client_id, service_code, description=None):
+    """
+    Creates an invoice for out-of-scope work once its addendum is signed
+    (Section 4: "no addendum signature -> no invoice -> no work starts").
+
+    NOTE: stubbed against a plausible `/invoices` endpoint - confirm the
+    real endpoint/payload shape against Financial Cents' current Open API
+    docs before wiring this up.
+    """
+    payload = {
+        "client_id": fc_client_id,
+        "description": description or f"{service_code} services",
+    }
+    resp = requests.post(f"{FC_API_BASE}/invoices", json=payload, headers=_headers())
+    resp.raise_for_status()
+    return resp.json()

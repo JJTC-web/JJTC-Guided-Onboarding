@@ -123,8 +123,6 @@ def send_workbook_email(email, first_name):
 @app.route("/api/send-workbook-now", methods=["POST"])
 def send_workbook_now():
     secret = request.headers.get("X-Cron-Secret")
-    print(f"DEBUG received: {repr(secret)}")
-    print(f"DEBUG expected: {repr(WORKBOOK_CRON_SECRET)}")
     if secret != WORKBOOK_CRON_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 

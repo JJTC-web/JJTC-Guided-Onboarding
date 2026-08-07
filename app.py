@@ -287,3 +287,167 @@ def step_detail(step_id):
             client_email = request.form.get("email")
             try:
                 document_id = pandadoc.create_document_from_template(step_id, client_name, client_email)
+                statuses = db.get_step_statuses(client_id)
+                conn = db.get_db()
+                conn.execute(
+                    "UPDATE step_status SET status = 'pending_verification', external_ref = ? "
+                    "WHERE client_id = ? AND step_id = ?",
+                    (document_id, client_id, step_id),
+                )
+                conn.commit()
+                conn.close()
+                flash("Document sent to your email for signature. Refresh this page once you've signed.")
+            except Exception as e:
+                flash(f"Couldn't send document for signature: {e}")
+
+        elif step["type"] == "financial_cents":
+            client_email = request.form.get("email")
+            try:
+                connected, fc_client = financial_cents.is_connected_and_current(client_email)
+                if connected:
+                    db.complete_step(client_id, step_id, step_ids, external_ref=str(fc_client.get("id")))
+                    return redirect(url_for("checklist"))
+                else:
+                    flash("We couldn't find your Financial Cents record yet. Please try again shortly or contact us.")
+            except Exception as e:
+                flash(f"Couldn't verify Financial Cents connection: {e}")
+
+        return redirect(url_for("step_detail", step_id=step_id))
+
+    if step["type"] == "esign" and step_status == "pending_verification":
+        external_ref = statuses.get(step_id, {}).get("external_ref")
+        if external_ref:
+            try:
+                if pandadoc.is_signed(external_ref):
+                    db.complete_step(client_id, step_id, step_ids, external_ref=external_ref)
+                    return redirect(url_for("checklist"))
+            except Exception:
+                pass
+
+    uploaded_files = db.get_uploaded_files(client_id, step_id) if step["type"] == "upload" else []
+
+    return render_template(
+        "step_detail.html",
+        step=step,
+        status=step_status,
+        uploaded_files=uploaded_files,
+    )
+
+
+@app.route("/progress")
+def progress():
+    client_id = current_client_id()
+    client = db.get_client(client_id)
+    if not client or not client["situation"]:
+        return redirect(url_for("situation_selector"))
+
+    steps = situations.get_steps(client["situation"])
+    step_ids = [s["id"] for s in steps]
+    statuses = db.get_step_statuses(client_id)
+
+    completed = [s for s in steps if statuses.get(s["id"], {}).get("status") == "complete"]
+    remaining = [s for s in steps if statuses.get(s["id"], {}).get("status") != "complete"]
+    pct = int((len(completed) / len(steps)) * 100) if steps else 0
+
+    return render_template(
+        "progress.html",
+        completed=completed,
+        remaining=remaining,
+        percent=pct,
+        statuses=statuses,
+        all_complete=(len(remaining) == 0),
+        client_status=client["status"],
+        nps_submitted=db.has_nps_response(client_id),
+    )
+
+
+@app.route("/nps", methods=["POST"])
+def submit_nps():
+    client_id = current_client_id()
+    try:
+        score = int(request.form.get("score"))
+        if not 0 <= score <= 10:
+            raise ValueError
+    except (TypeError, ValueError):
+        flash("Please select a score between 0 and 10.")
+        return redirect(url_for("progress"))
+
+    comment = request.form.get("comment", "").strip()
+    comment_en, comment_lang = None, None
+    if comment:
+        try:
+            comment_en, comment_lang = google_translate.translate_to_english(comment)
+        except Exception:
+            pass
+
+    db.add_nps_response(client_id, score, comment, comment_en, comment_lang)
+    return redirect(url_for("nps_thank_you"))
+
+
+@app.route("/nps/thank-you")
+def nps_thank_you():
+    return render_template("thank_you.html")
+
+
+@app.route("/dashboard/login", methods=["GET", "POST"])
+def dashboard_login():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        next_url = request.form.get("next", "")
+
+        try:
+            authenticated_email = supabase_auth.sign_in_with_password(email, password)
+        except Exception as e:
+            flash(str(e))
+            return redirect(url_for("dashboard_login", next=next_url))
+
+        try:
+            if not supabase_auth.is_admin(authenticated_email):
+                flash("Your account doesn't have dashboard access.")
+                return redirect(url_for("dashboard_login", next=next_url))
+        except Exception as e:
+            flash(f"Couldn't verify dashboard access: {e}")
+            return redirect(url_for("dashboard_login", next=next_url))
+
+        session["is_admin"] = True
+        session["admin_email"] = authenticated_email
+        return redirect(_safe_next_url(next_url))
+
+    return render_template("dashboard_login.html", next=request.args.get("next", ""))
+
+
+@app.route("/dashboard/logout", methods=["POST"])
+def dashboard_logout():
+    session.pop("is_admin", None)
+    session.pop("admin_email", None)
+    return redirect(url_for("dashboard_login"))
+
+
+@app.route("/dashboard")
+@require_admin
+def dashboard():
+    summary = db.get_nps_summary()
+    return render_template("dashboard.html", summary=summary)
+
+
+@app.route("/dashboard/digest", methods=["POST"])
+@require_admin
+def dashboard_send_digest():
+    admin_email = os.environ.get("ADMIN_EMAIL")
+    if not admin_email:
+        flash("Set the ADMIN_EMAIL environment variable to send the digest.")
+        return redirect(url_for("dashboard"))
+
+    summary = db.get_nps_summary()
+    try:
+        resend_email.send_nps_digest(summary, admin_email)
+        flash(f"Digest sent to {admin_email}.")
+    except Exception as e:
+        flash(f"Couldn't send digest: {e}")
+    return redirect(url_for("dashboard"))
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

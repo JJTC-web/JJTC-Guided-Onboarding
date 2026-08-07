@@ -12,15 +12,17 @@ import policy
 import situations
 from integrations import pandadoc, financial_cents, resend_email, google_translate, supabase_auth
 
-resend.api_key = os.environ.get("RESEND_API_KEY")
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.jinja_env.filters["language_name"] = google_translate.language_name
 app.jinja_env.globals["policy"] = policy
 
 db.init_db()
+
+resend.api_key = os.environ.get("RESEND_API_KEY")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+WORKBOOK_CRON_SECRET = os.environ.get("WORKBOOK_CRON_SECRET")
+WORKBOOK_PDF_LINK = "https://web-production-51ad4.up.railway.app/static/workbook.pdf"
 
 
 def get_db_connection():
@@ -91,6 +93,7 @@ def require_admin(view):
         return view(*args, **kwargs)
     return wrapped
 
+
 @app.route("/api/subscribe", methods=["POST"])
 def subscribe():
     data = request.get_json()
@@ -128,6 +131,7 @@ def subscribe():
         cur.close()
         conn.close()
 
+
 def send_welcome_email(email, first_name):
     resend.Emails.send({
         "from": "Lady Emily <hello@jjtc.info>",
@@ -148,96 +152,94 @@ def challenge_signup():
     return render_template("challenge_signup.html")
 
 
-CHALLENGE_LENGTH_DAYS = 31
+def send_workbook_email(email, first_name):
+    resend.Emails.send({
+        "from": "Lady Emily <hello@jjtc.info>",
+        "to": email,
+        "subject": "A little something for your finances too",
+        "html": f"""
+            <p>Hi {first_name or 'there'},</p>
+            <p>You're a few days into the Challenge — how's it feeling so far?
+            Discipline in one area of life has a way of spilling into others,
+            and I wanted to hand you something that can help with one in particular:
+            your finances.</p>
+            <p>This free workbook, <strong>Funding the Mission</strong>, walks you
+            through identifying funding opportunities, organizing next steps, and
+            building financial readiness for your ministry.</p>
+            <p><a href="{WORKBOOK_PDF_LINK}">Grab your free workbook here</a></p>
+            <p>Keep going — you're building something real.</p>
+            <p>Lady Emily<br>Jehovah Jireh Tax Consultants</p>
+        """
+    })
+    
+@app.route("/api/send-workbook-now", methods=["POST"])
+def send_workbook_now():
+    secret = request.headers.get("X-Cron-Secret")
+    if secret != WORKBOOK_CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
 
-# Placeholder day-by-day content for the 31-Day Discipline Challenge workbook
-# emails. Fill in the real body per day here; any day without a specific
-# entry falls back to a generic placeholder so send_workbook_batch() never
-# breaks on a missing day.
-WORKBOOK_DAYS = {
-    # 1: {"subject": "Day 1: ...", "html": "<p>...</p>"},
-}
 
 
-def _workbook_content_for_day(day_number):
-    entry = WORKBOOK_DAYS.get(day_number)
-    if entry:
-        return entry
-    return {
-        "subject": f"Day {day_number} of your 31-Day Discipline Challenge",
-        "html": f"<p>Day {day_number} content coming soon — check back in your workbook.</p>",
-    }
-
-
-def _ensure_workbook_progress_column(cur):
-    cur.execute(
-        "ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS last_workbook_day_sent INTEGER NOT NULL DEFAULT 0"
-    )
-
-
-@app.route("/api/send-workbook-batch", methods=["POST"])
-def send_workbook_batch():
-    """
-    Meant to be triggered once a day by an external scheduler (see
-    env.example's SCHEDULED_TASK_SECRET). For each subscriber, sends
-    whichever challenge day matches how long they've been subscribed - at
-    most one email per subscriber per run, and never a day they've already
-    received, so a missed cron run doesn't cause a pile of backdated emails.
-    """
-    secret = os.environ.get("SCHEDULED_TASK_SECRET")
-    authorized = session.get("is_admin") or (
-        secret and hmac.compare_digest(request.headers.get("X-Task-Secret", ""), secret)
-    )
-    if not authorized:
-        return "unauthorized", 401
+    data = request.get_json()
+    email = data.get("email")
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
 
     conn = get_db_connection()
     cur = conn.cursor()
-    sent = skipped = errors = 0
     try:
-        _ensure_workbook_progress_column(cur)
-        conn.commit()
+        cur.execute("SELECT id, first_name FROM subscribers WHERE email = %s", (email,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Subscriber not found"}), 404
 
+        sub_id, first_name = row
+        send_workbook_email(email, first_name)
         cur.execute(
-            """
-            SELECT email, first_name, welcome_email_sent_at, last_workbook_day_sent
-            FROM subscribers
-            WHERE welcome_email_sent_at IS NOT NULL
-              AND last_workbook_day_sent < %s
-            """,
-            (CHALLENGE_LENGTH_DAYS,),
+            "UPDATE subscribers SET workbook_email_sent_at = NOW() WHERE id = %s",
+            (sub_id,)
         )
-        rows = cur.fetchall()
-
-        for email, first_name, welcome_email_sent_at, last_day_sent in rows:
-            current_day = (datetime.utcnow().date() - welcome_email_sent_at.date()).days + 1
-            current_day = min(current_day, CHALLENGE_LENGTH_DAYS)
-            if current_day <= last_day_sent:
-                skipped += 1
-                continue
-
-            content = _workbook_content_for_day(current_day)
-            try:
-                resend.Emails.send({
-                    "from": "Lady Emily <hello@jjtc.info>",
-                    "to": email,
-                    "subject": content["subject"],
-                    "html": content["html"],
-                })
-                cur.execute(
-                    "UPDATE subscribers SET last_workbook_day_sent = %s WHERE email = %s",
-                    (current_day, email),
-                )
-                conn.commit()
-                sent += 1
-            except Exception:
-                conn.rollback()
-                errors += 1
+        conn.commit()
+        return jsonify({"success": True}), 200
     finally:
         cur.close()
         conn.close()
 
-    return jsonify({"sent": sent, "skipped": skipped, "errors": errors}), 200
+
+@app.route("/api/send-workbook-batch", methods=["POST"])
+def send_workbook_batch():
+    secret = request.headers.get("X-Cron-Secret")
+    if secret != WORKBOOK_CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id, email, first_name FROM subscribers
+            WHERE welcome_email_sent_at IS NOT NULL
+              AND welcome_email_sent_at <= NOW() - INTERVAL '2 days'
+              AND workbook_email_sent_at IS NULL
+            """
+        )
+        rows = cur.fetchall()
+
+        sent_count = 0
+        for row in rows:
+            sub_id, email, first_name = row
+            send_workbook_email(email, first_name)
+            cur.execute(
+                "UPDATE subscribers SET workbook_email_sent_at = NOW() WHERE id = %s",
+                (sub_id,)
+            )
+            sent_count += 1
+
+        conn.commit()
+        return jsonify({"success": True, "sent": sent_count}), 200
+    finally:
+        cur.close()
+        conn.close()
 
 
 @app.route("/")
@@ -306,7 +308,6 @@ def step_detail(step_id):
     step_ids = [s["id"] for s in steps]
     statuses = db.get_step_statuses(client_id)
 
-    # Lock enforcement: only the current unlocked step (or a completed one) is viewable
     current_step_id = db.get_current_step_id(client_id, step_ids)
     step_status = statuses.get(step_id, {}).get("status", "locked")
     if step_status == "locked":
@@ -338,7 +339,6 @@ def step_detail(step_id):
             flash("Please upload at least one file.")
 
         elif step["type"] == "esign":
-            # Kick off a PandaDoc document for this step
             client_name = request.form.get("name", "Client")
             client_email = request.form.get("email")
             try:
@@ -398,7 +398,6 @@ def step_detail(step_id):
 
         return redirect(url_for("step_detail", step_id=step_id))
 
-    # GET: for esign steps pending verification, check PandaDoc status
     if step["type"] == "esign" and step_status == "pending_verification":
         external_ref = statuses.get(step_id, {}).get("external_ref")
         if external_ref:
@@ -409,7 +408,7 @@ def step_detail(step_id):
                         db.mark_addendum_signed(external_ref)
                     return redirect(url_for("checklist"))
             except Exception:
-                pass  # fall through and just show current status
+                pass
 
     uploaded_files = db.get_uploaded_files(client_id, step_id) if step["type"] == "upload" else []
 
@@ -673,7 +672,7 @@ def submit_nps():
         try:
             comment_en, comment_lang = google_translate.translate_to_english(comment)
         except Exception:
-            pass  # the dashboard/digest will just fall back to the original text
+            pass
 
     db.add_nps_response(client_id, score, comment, comment_en, comment_lang)
     return redirect(url_for("nps_thank_you"))

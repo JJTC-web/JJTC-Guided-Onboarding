@@ -10,7 +10,7 @@ def get_db_connection():
 import os
 from functools import wraps
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 
 import db
 import situations

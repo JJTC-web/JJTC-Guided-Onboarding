@@ -5,6 +5,8 @@ import resend
 resend.api_key = os.environ.get("RESEND_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+WORKBOOK_CRON_SECRET = os.environ.get("WORKBOOK_CRON_SECRET") WORKBOOK_PDF_LINK = "https://web-production-51ad4.up.railway.app/static/workbook.pdf"
+
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 import os
@@ -51,6 +53,100 @@ def subscribe():
 
     if not email:
         return jsonify({"error": "Email is required"}), 400
+
+     (/api/send-workbook-now and /api/send-workbook-batch)
+import datetime
+
+WORKBOOK_CRON_SECRET = os.environ.get("WORKBOOK_CRON_SECRET")
+WORKBOOK_PDF_LINK = "PUT_YOUR_WORKBOOK_PDF_LINK_HERE"
+
+def send_workbook_email(email, first_name):
+    resend.Emails.send({
+        "from": "Lady Emily <hello@jjtc.info>",
+        "to": email,
+        "subject": "A little something for your finances too",
+        "html": f"""
+            <p>Hi {first_name or 'there'},</p>
+            <p>You're a few days into the Challenge — how's it feeling so far?
+            Discipline in one area of life has a way of spilling into others,
+            and I wanted to hand you something that can help with one in particular:
+            your finances.</p>
+            <p>This free workbook, <strong>Funding the Mission</strong>, walks you
+            through identifying funding opportunities, organizing next steps, and
+            building financial readiness for your ministry.</p>
+            <p><a href="{WORKBOOK_PDF_LINK}">Grab your free workbook here</a></p>
+            <p>Keep going — you're building something real.</p>
+            <p>Lady Emily<br>Jehovah Jireh Tax Consultants</p>
+        """
+    })
+
+# One-off: send to a specific person right now (for cases like Shirin today)
+@app.route("/api/send-workbook-now", methods=["POST"])
+def send_workbook_now():
+    secret = request.headers.get("X-Cron-Secret")
+    if secret != WORKBOOK_CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    email = data.get("email")
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, first_name FROM subscribers WHERE email = %s", (email,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Subscriber not found"}), 404
+
+        sub_id, first_name = row
+        send_workbook_email(email, first_name)
+        cur.execute(
+            "UPDATE subscribers SET workbook_email_sent_at = NOW() WHERE id = %s",
+            (sub_id,)
+        )
+        conn.commit()
+        return jsonify({"success": True}), 200
+    finally:
+        cur.close()
+        conn.close()
+
+# Daily batch: automatically send to everyone past the 2-day delay
+@app.route("/api/send-workbook-batch", methods=["POST"])
+def send_workbook_batch():
+    secret = request.headers.get("X-Cron-Secret")
+    if secret != WORKBOOK_CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id, email, first_name FROM subscribers
+            WHERE welcome_email_sent_at IS NOT NULL
+              AND welcome_email_sent_at <= NOW() - INTERVAL '2 days'
+              AND workbook_email_sent_at IS NULL
+            """
+        )
+        rows = cur.fetchall()
+
+        sent_count = 0
+        for row in rows:
+            sub_id, email, first_name = row
+            send_workbook_email(email, first_name)
+            cur.execute(
+                "UPDATE subscribers SET workbook_email_sent_at = NOW() WHERE id = %s",
+                (sub_id,)
+            )
+            sent_count += 1
+
+        conn.commit()
+        return jsonify({"success": True, "sent": sent_count}), 200
+    finally:
+        cur.close()
+        conn.close()
 
     conn = get_db_connection()
     cur = conn.cursor()

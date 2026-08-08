@@ -69,6 +69,18 @@ def _headers():
     }
 
 
+def _raise_for_status_with_detail(resp):
+    """
+    Like resp.raise_for_status(), but includes PandaDoc's actual response
+    body in the error. Plain requests.HTTPError only says e.g. "400 Client
+    Error: Bad Request for url: ..." - it drops the response body, which is
+    where PandaDoc actually explains what's wrong (e.g. an unknown
+    recipient role).
+    """
+    if not resp.ok:
+        raise RuntimeError(f"{resp.status_code} error from PandaDoc: {resp.text}")
+
+
 def create_document_from_template(step_id, client_name, client_email):
     """
     Creates a PandaDoc document from the appropriate template and sends it
@@ -92,7 +104,7 @@ def create_document_from_template(step_id, client_name, client_email):
     }
 
     resp = requests.post(f"{PANDADOC_API_BASE}/documents", json=payload, headers=_headers())
-    resp.raise_for_status()
+    _raise_for_status_with_detail(resp)
     doc = resp.json()
     document_id = doc["id"]
 
@@ -102,7 +114,7 @@ def create_document_from_template(step_id, client_name, client_email):
         json={"message": "Please review and sign your document from Jehovah Jireh Tax Consultants."},
         headers=_headers(),
     )
-    send_resp.raise_for_status()
+    _raise_for_status_with_detail(send_resp)
 
     return document_id
 
@@ -113,7 +125,7 @@ def get_document_status(document_id):
     'document.draft', 'document.sent', 'document.viewed', 'document.completed'.
     """
     resp = requests.get(f"{PANDADOC_API_BASE}/documents/{document_id}", headers=_headers())
-    resp.raise_for_status()
+    _raise_for_status_with_detail(resp)
     return resp.json().get("status")
 
 
@@ -147,7 +159,7 @@ def generate_addendum(service_code, client_name, client_email):
     }
 
     resp = requests.post(f"{PANDADOC_API_BASE}/documents", json=payload, headers=_headers())
-    resp.raise_for_status()
+    _raise_for_status_with_detail(resp)
     document_id = resp.json()["id"]
 
     send_resp = requests.post(
@@ -161,7 +173,7 @@ def generate_addendum(service_code, client_name, client_email):
         },
         headers=_headers(),
     )
-    send_resp.raise_for_status()
+    _raise_for_status_with_detail(send_resp)
 
     return document_id
 

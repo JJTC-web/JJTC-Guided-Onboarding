@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Request Additional Service{% endblock %}
+{% block content %}
+<h1>Request Additional Service</h1>
+<p class="subtitle">Scope outside your current engagement letter</p>
+
+<p style="font-size:0.9rem;color:#333;">{{ policy.SCOPE_AND_PAYMENT_POLICY }}</p>
+
+<form method="POST">
+  <label>Full Name</label>
+  <input type="text" name="name" value="{{ (client.full_name if client else '') or '' }}" required>
+  <label>Email</label>
+  <input type="email" name="email" value="{{ (client.email if client else '') or '' }}" required>
+  <label>What do you need?</label>
+  <select name="service_code" required style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:1rem;font-family:inherit;margin-top:6px;">
+    <option value="" disabled selected>Select a service</option>
+    {% for code in service_codes %}
+      <option value="{{ code }}">{{ service_labels[code] }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Request Service</button>
+</form>
+
+<p style="margin-top:20px;"><a href="{{ url_for('progress') }}">&larr; Back to progress</a></p>
+{% endblock %}

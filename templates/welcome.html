@@ -4,8 +4,14 @@
 <h1>Welcome to Jehovah Jireh Tax Consultants</h1>
 <p class="subtitle">Your Vision Is Our Mission.</p>
 
-<div style="background:#000;border-radius:10px;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:#DBB312;font-weight:600;">
-  Welcome Video
+<div style="background:#000;border-radius:10px;aspect-ratio:16/9;overflow:hidden;">
+  <iframe
+    src="https://www.youtube-nocookie.com/embed/PzYTFmhsVaw"
+    title="Welcome to Jehovah Jireh Tax Consultants"
+    style="width:100%;height:100%;border:0;display:block;"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+  ></iframe>
 </div>
 
 <p style="margin-top:20px;font-size:0.95rem;color:#333;">
@@ -13,6 +19,10 @@
   steps &mdash; a short intake, your engagement letter, connecting your
   Financial Cents account, and uploading the documents we need. Your file
   moves into active work only once every required step is complete.
+</p>
+
+<p style="font-size:0.85rem;color:#6b6b6b;background:#faf8f3;border:1px solid #eee;border-radius:8px;padding:12px 14px;">
+  {{ policy.PORTAL_DOCUMENT_POLICY }}
 </p>
 
 <form method="POST" action="{{ url_for('welcome_watched') }}">

@@ -40,6 +40,18 @@
     <button type="submit">Verify Connection</button>
   </form>
 
+{% elif step.type == 'portal_confirm' %}
+  <p style="font-size:0.9rem;color:#333;">{{ policy.PORTAL_DOCUMENT_POLICY }}</p>
+  <form method="POST">
+    <label>Email Used for Financial Cents</label>
+    <input type="email" name="email" required>
+    <p style="font-size:0.85rem;color:#6b6b6b;">
+      We'll check your Financial Cents portal directly to confirm your documents were uploaded there -
+      this isn't something you can check off yourself.
+    </p>
+    <button type="submit">Confirm Portal Upload</button>
+  </form>
+
 {% elif step.type == 'upload' %}
   <p style="font-size:0.9rem;font-weight:600;">Required documents:</p>
   <ul style="font-size:0.9rem;color:#333;">

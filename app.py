@@ -22,7 +22,7 @@ db.init_db()
 resend.api_key = os.environ.get("RESEND_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 WORKBOOK_CRON_SECRET = os.environ.get("WORKBOOK_CRON_SECRET")
-WORKBOOK_PDF_LINK = "https://web-production-51ad4.up.railway.app/static/workbook.pdf"
+WORKBOOK_PDF_LINK = "https://onboarding.jjtc.info/static/workbook.pdf"
 
 
 def get_db_connection():

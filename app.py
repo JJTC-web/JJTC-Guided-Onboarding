@@ -133,18 +133,21 @@ def subscribe():
 
 
 def send_welcome_email(email, first_name):
-    resend.Emails.send({
-        "from": "Lady Emily <hello@jjtc.info>",
-        "to": email,
-        "subject": "You're in! Let's start your 31 days",
-        "html": f"""
-            <p>Hi {first_name or 'there'},</p>
-            <p>Welcome to the 31-Day Discipline Challenge — I'm so glad you're here.</p>
-            <p>Your Day 1 starts now: [Day 1 content / link]</p>
-            <p>Keep an eye on your inbox — I'll be with you each step of the way.</p>
-            <p>Here's to your next 31 days,<br>Lady Emily<br>Jehovah Jireh Tax Consultants</p>
-        """
-    })
+    try:
+        resend.Emails.send({
+            "from": "Lady Emily <hello@jjtc.info>",
+            "to": email,
+            "subject": "You're in! Let's start your 31 days",
+            "html": f"""
+                <p>Hi {first_name or 'there'},</p>
+                <p>Welcome to the 31-Day Discipline Challenge — I'm so glad you're here.</p>
+                <p>Your Day 1 starts now: [Day 1 content / link]</p>
+                <p>Keep an eye on your inbox — I'll be with you each step of the way.</p>
+                <p>Here's to your next 31 days,<br>Lady Emily<br>Jehovah Jireh Tax Consultants</p>
+            """
+        })
+    except Exception as e:
+        app.logger.error("Failed to send welcome email to %s: %s", email, e)
 
 
 @app.route("/challenge-signup")
@@ -153,24 +156,27 @@ def challenge_signup():
 
 
 def send_workbook_email(email, first_name):
-    resend.Emails.send({
-        "from": "Lady Emily <hello@jjtc.info>",
-        "to": email,
-        "subject": "A little something for your finances too",
-        "html": f"""
-            <p>Hi {first_name or 'there'},</p>
-            <p>You're a few days into the Challenge — how's it feeling so far?
-            Discipline in one area of life has a way of spilling into others,
-            and I wanted to hand you something that can help with one in particular:
-            your finances.</p>
-            <p>This free workbook, <strong>Funding the Mission</strong>, walks you
-            through identifying funding opportunities, organizing next steps, and
-            building financial readiness for your ministry.</p>
-            <p><a href="{WORKBOOK_PDF_LINK}">Grab your free workbook here</a></p>
-            <p>Keep going — you're building something real.</p>
-            <p>Lady Emily<br>Jehovah Jireh Tax Consultants</p>
-        """
-    })
+    try:
+        resend.Emails.send({
+            "from": "Lady Emily <hello@jjtc.info>",
+            "to": email,
+            "subject": "A little something for your finances too",
+            "html": f"""
+                <p>Hi {first_name or 'there'},</p>
+                <p>You're a few days into the Challenge — how's it feeling so far?
+                Discipline in one area of life has a way of spilling into others,
+                and I wanted to hand you something that can help with one in particular:
+                your finances.</p>
+                <p>This free workbook, <strong>Funding the Mission</strong>, walks you
+                through identifying funding opportunities, organizing next steps, and
+                building financial readiness for your ministry.</p>
+                <p><a href="{WORKBOOK_PDF_LINK}">Grab your free workbook here</a></p>
+                <p>Keep going — you're building something real.</p>
+                <p>Lady Emily<br>Jehovah Jireh Tax Consultants</p>
+            """
+        })
+    except Exception as e:
+        app.logger.error("Failed to send workbook email to %s: %s", email, e)
     
 @app.route("/api/send-workbook-now", methods=["POST"])
 def send_workbook_now():

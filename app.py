@@ -22,9 +22,9 @@ db.init_db()
 resend.api_key = os.environ.get("RESEND_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 WORKBOOK_CRON_SECRET = os.environ.get("WORKBOOK_CRON_SECRET")
-APP_BASE_URL = os.environ.get(
-    "APP_BASE_URL", "https://web-production-51ad4.up.railway.app"
-).rstrip("/")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://onboarding.jjtc.info").rstrip(
+    "/"
+)
 WORKBOOK_PDF_LINK = f"{APP_BASE_URL}/static/workbook.pdf"
 
 

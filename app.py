@@ -741,6 +741,7 @@ def dashboard():
     pending_addenda = db.list_pending_addenda()
     return render_template(
         "dashboard.html",
+        storage_warning=db.storage_warning(),
         summary=summary,
         open_flags=open_flags,
         pending_addenda=pending_addenda,

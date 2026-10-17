@@ -3,7 +3,39 @@ import os
 import uuid
 from datetime import datetime
 
-DB_PATH = os.environ.get("DATABASE_PATH", "onboarding.db")
+def _default_db_path():
+    """
+    Where the database file lives. Railway erases a service's files on every
+    redeploy unless a Volume is attached, so:
+      1. DATABASE_PATH, if set, always wins.
+      2. Otherwise, if a Railway Volume is attached (Railway sets
+         RAILWAY_VOLUME_MOUNT_PATH automatically), the database goes on it.
+      3. Otherwise, a local file - fine for testing, NOT safe on Railway.
+    """
+    if os.environ.get("DATABASE_PATH"):
+        return os.environ["DATABASE_PATH"]
+    volume = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+    if volume:
+        return os.path.join(volume, "onboarding.db")
+    return "onboarding.db"
+
+
+DB_PATH = _default_db_path()
+
+
+def storage_warning():
+    """
+    A warning for the admin dashboard when client data would be erased on
+    the next redeploy (running on Railway with no Volume and no
+    DATABASE_PATH). None when storage is safe.
+    """
+    on_railway = any(k.startswith("RAILWAY_") for k in os.environ)
+    if on_railway and not os.environ.get("DATABASE_PATH") and not os.environ.get("RAILWAY_VOLUME_MOUNT_PATH"):
+        return (
+            "Client data is NOT being saved permanently. Railway erases it on every redeploy. "
+            "Attach a Volume to this service in Railway (mount path /data) to fix this."
+        )
+    return None
 
 
 def get_db():

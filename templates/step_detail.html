@@ -52,19 +52,29 @@
     <button type="submit">Confirm Portal Upload</button>
   </form>
 
-{% elif step.type == 'upload' %}
-  <p style="font-size:0.9rem;font-weight:600;">Required documents:</p>
+{% elif step.type == 'portal_docs' %}
+  <p style="font-size:0.9rem;color:#333;">{{ policy.PORTAL_DOCUMENT_POLICY }}</p>
+  <p style="font-size:0.9rem;font-weight:600;">Upload these to your client portal:</p>
   <ul style="font-size:0.9rem;color:#333;">
     {% for doc in step.required_docs %}<li>{{ doc }}</li>{% endfor %}
   </ul>
-  {% if uploaded_files %}
-    <p style="font-size:0.85rem;color:#1e7a34;">Already uploaded: {{ uploaded_files|map(attribute='filename')|join(', ') }}</p>
+  {% if portal_url %}
+    <a href="{{ portal_url }}" target="_blank" class="btn btn-gold">Open My Client Portal</a>
+  {% else %}
+    <p style="font-size:0.85rem;color:#6b6b6b;">Use the Financial Cents portal link from your welcome email.</p>
   {% endif %}
-  <form method="POST" enctype="multipart/form-data">
-    <label>Upload Files</label>
-    <input type="file" name="documents" multiple required>
-    <button type="submit">Upload</button>
+
+  <p style="font-size:0.9rem;font-weight:600;margin-top:22px;">Tips for uploading</p>
+  <ul style="font-size:0.85rem;color:#333;">
+    <li><strong>More than one store or business?</strong> Upload everything to this one portal. Start each file name with the store name, like <em>Main St - December bank statement</em>. We'll sort them.</li>
+    <li><strong>Bank and credit card statements:</strong> download the PDF from your bank's website instead of taking a photo.</li>
+    <li><strong>Receipts and paper documents:</strong> a phone scan is fine. The Notes app on iPhone and the Google Drive app both scan pages into clean PDFs.</li>
+  </ul>
+
+  <form method="POST">
+    <button type="submit">I've Uploaded My Documents</button>
   </form>
+  <p style="font-size:0.8rem;color:#6b6b6b;">We check your portal directly to confirm your documents arrived.</p>
 {% endif %}
 
 <p style="margin-top:20px;"><a href="{{ url_for('checklist') }}">&larr; Back to checklist</a></p>

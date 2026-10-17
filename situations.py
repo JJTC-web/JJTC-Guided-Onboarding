@@ -2,10 +2,11 @@
 Defines the ordered onboarding steps for each of the six client situations.
 Each step has:
   id            - unique key used in the DB and URLs
-  type          - "video" | "intake" | "esign" | "financial_cents" | "portal_confirm" | "upload"
+  type          - "video" | "intake" | "esign" | "financial_cents" | "portal_confirm" | "portal_docs"
   title         - shown on the checklist
   description   - shown on the checklist and step detail page
-  required_docs - only for type "upload": list of document labels required
+  required_docs - only for type "portal_docs": documents to upload to the
+                  Financial Cents portal (the app itself never stores files)
 """
 
 import os
@@ -29,8 +30,10 @@ OUT_OF_SCOPE_SERVICE_CODES = ("BOOKKEEPING", "CLEANUP", "ANNUAL-REPORT", "SALES-
 
 # A single upload batch (or a Financial Cents portal upload) at or above this
 # many files is flagged as "possible cleanup/bookkeeping scope" rather than
-# silently filed as standard document intake (Section 2.2).
-FILE_COUNT_ANOMALY_THRESHOLD = int(os.environ.get("FILE_COUNT_ANOMALY_THRESHOLD", "10"))
+# silently filed as standard document intake (Section 2.2). Set high enough
+# that a multi-store owner uploading a full year of statements (roughly 25-30
+# files per store) doesn't trigger it; override with the env var if needed.
+FILE_COUNT_ANOMALY_THRESHOLD = int(os.environ.get("FILE_COUNT_ANOMALY_THRESHOLD", "100"))
 
 # Keyword -> service code mapping used when polling Financial Cents client
 # portal tasks for scope-triggering requests (Section 6.5,
@@ -111,7 +114,7 @@ SITUATIONS = {
             BASE_PORTAL_CONFIRM,
             {
                 "id": "upload_formation_docs",
-                "type": "upload",
+                "type": "portal_docs",
                 "title": "Upload Formation Documents",
                 "description": "Upload your business formation documents.",
                 "required_docs": ["Articles of Incorporation / Organization", "EIN Confirmation Letter"],
@@ -127,7 +130,7 @@ SITUATIONS = {
             BASE_PORTAL_CONFIRM,
             {
                 "id": "upload_nonprofit_docs",
-                "type": "upload",
+                "type": "portal_docs",
                 "title": "Upload Governance & Formation Documents",
                 "description": "Upload your nonprofit's formation and governance documents.",
                 "required_docs": ["Articles of Incorporation", "501(c)(3) Determination Letter", "Bylaws"],
@@ -143,7 +146,7 @@ SITUATIONS = {
             BASE_PORTAL_CONFIRM,
             {
                 "id": "upload_prior_returns",
-                "type": "upload",
+                "type": "portal_docs",
                 "title": "Upload Prior-Year Returns & Financials",
                 "description": "Upload your most recent tax returns and financial statements.",
                 "required_docs": ["Prior-Year Tax Return", "Current Financial Statements"],
@@ -159,7 +162,7 @@ SITUATIONS = {
             BASE_PORTAL_CONFIRM,
             {
                 "id": "upload_income_records",
-                "type": "upload",
+                "type": "portal_docs",
                 "title": "Upload Available Income Records",
                 "description": "Upload whatever income records you have available, even if incomplete.",
                 "required_docs": ["Income Records (any available)", "Government-Issued ID"],
@@ -175,7 +178,7 @@ SITUATIONS = {
             BASE_PORTAL_CONFIRM,
             {
                 "id": "upload_payroll_docs",
-                "type": "upload",
+                "type": "portal_docs",
                 "title": "Upload Payroll Documents",
                 "description": "Upload employee and prior payroll information.",
                 "required_docs": ["Employee List", "Prior Payroll Reports"],
@@ -192,7 +195,7 @@ SITUATIONS = {
             BASE_PORTAL_CONFIRM,
             {
                 "id": "upload_prior_returns_switch",
-                "type": "upload",
+                "type": "portal_docs",
                 "title": "Upload Available Prior Records",
                 "description": "Upload any prior-year returns or financials you already have.",
                 "required_docs": ["Prior-Year Tax Return (if available)"],

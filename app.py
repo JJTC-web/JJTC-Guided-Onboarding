@@ -330,19 +330,30 @@ def step_detail(step_id):
             db.complete_step(client_id, step_id, step_ids)
             return redirect(url_for("checklist"))
 
-        elif step["type"] == "upload":
-            files = request.files.getlist("documents")
-            for f in files:
-                if f and f.filename:
-                    upload_dir = os.path.join("uploads", client_id)
-                    os.makedirs(upload_dir, exist_ok=True)
-                    f.save(os.path.join(upload_dir, f.filename))
-                    db.add_uploaded_file(client_id, step_id, f.filename)
-            uploaded = db.get_uploaded_files(client_id, step_id)
-            if uploaded:
-                db.complete_step(client_id, step_id, step_ids)
-                return redirect(url_for("checklist"))
-            flash("Please upload at least one file.")
+        elif step["type"] == "portal_docs":
+            # Documents go to the Financial Cents portal only - this app
+            # never stores client files. Completion is verified against
+            # Financial Cents: the portal must show more files than it did
+            # when the "Portal Upload Confirmed" step was checked.
+            email = client.get("email")
+            if not email:
+                flash("We don't have your email on file yet. Please complete the intake step first.")
+                return redirect(url_for("step_detail", step_id=step_id))
+            try:
+                fc_client, file_count = financial_cents.get_portal_upload_count(email)
+                if not fc_client:
+                    flash("We couldn't find your Financial Cents portal record yet. Please try again shortly or contact us.")
+                elif file_count <= (client.get("portal_file_count") or 0):
+                    flash(
+                        "We don't see any new documents in your portal yet. Upload them to your Financial "
+                        "Cents client portal, then come back and tap this button again."
+                    )
+                else:
+                    db.set_portal_upload_confirmed(client_id, file_count)
+                    db.complete_step(client_id, step_id, step_ids, external_ref=str(file_count))
+                    return redirect(url_for("checklist"))
+            except Exception as e:
+                flash(f"Couldn't check your portal: {e}")
 
         elif step["type"] == "esign":
             client_name = request.form.get("name", "Client")
@@ -416,13 +427,11 @@ def step_detail(step_id):
             except Exception:
                 pass
 
-    uploaded_files = db.get_uploaded_files(client_id, step_id) if step["type"] == "upload" else []
-
     return render_template(
         "step_detail.html",
         step=step,
         status=step_status,
-        uploaded_files=uploaded_files,
+        portal_url=os.environ.get("FINANCIAL_CENTS_PORTAL_URL"),
     )
 
 
@@ -732,6 +741,7 @@ def dashboard():
     pending_addenda = db.list_pending_addenda()
     return render_template(
         "dashboard.html",
+        storage_warning=db.storage_warning(),
         summary=summary,
         open_flags=open_flags,
         pending_addenda=pending_addenda,

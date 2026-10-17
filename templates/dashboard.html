@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Admin Dashboard{% endblock %}
 {% block content %}
+{% if storage_warning %}
+  <div class="flash" style="background:#fdecea;border-color:#c0392b;color:#8a2a1f;font-weight:600;">{{ storage_warning }}</div>
+{% endif %}
 <h1>Admin Dashboard</h1>
 <p class="subtitle">NPS feedback from clients going through onboarding.</p>
 

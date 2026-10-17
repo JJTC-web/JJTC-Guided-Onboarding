@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ assessment.tax_year }} Year-End Questionnaire{% endblock %}
+{% block content %}
+<h1>{{ assessment.tax_year }} Year-End Questionnaire</h1>
+<p class="subtitle">About five minutes. Your answers tell us exactly what your return needs, so your engagement letter has no surprises.</p>
+
+<form method="POST" id="year-end-form">
+  <div class="q">
+    <div class="q-text">Business legal name</div>
+    <input type="text" name="entity_name" value="{{ entity_name }}" required>
+  </div>
+
+  {% for q in questions %}
+    <div class="q" data-qid="{{ q.id }}"
+         {% if q.show_if %}data-show-if='{{ q.show_if | tojson }}'{% endif %}>
+      <div class="q-text">{{ q.text }}</div>
+      {% set current = answers.get(q.id) %}
+      {% if q.type == 'yes_no' %}
+        <div class="radio-row">
+          <label><input type="radio" name="{{ q.id }}" value="yes" {% if current == 'yes' %}checked{% endif %}> Yes</label>
+          <label><input type="radio" name="{{ q.id }}" value="no" {% if current == 'no' %}checked{% endif %}> No</label>
+        </div>
+      {% elif q.type == 'number' %}
+        <input type="number" name="{{ q.id }}" min="0" max="{{ q.max }}" step="1"
+               value="{{ current if current is not none else '' }}">
+      {% else %}
+        <div class="radio-col">
+          {% for value, label in q.options %}
+            <label><input type="radio" name="{{ q.id }}" value="{{ value }}" {% if current == value %}checked{% endif %}> {{ label }}</label>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if q.help %}<div class="help">{{ q.help }}</div>{% endif %}
+    </div>
+  {% endfor %}
+
+  <button type="submit">Submit My Answers</button>
+</form>
+
+<script>
+  // Hide follow-up questions that don't apply (e.g. the inventory count
+  // question when the business doesn't sell products). Without JavaScript
+  // every question shows, and the server ignores ones that don't apply.
+  (function () {
+    var form = document.getElementById('year-end-form');
+    function value(id) {
+      var checked = form.querySelector('[name="' + id + '"]:checked');
+      if (checked) return checked.value;
+      var input = form.querySelector('[name="' + id + '"]');
+      return input && input.type !== 'radio' ? input.value : null;
+    }
+    function update() {
+      form.querySelectorAll('[data-show-if]').forEach(function (block) {
+        var rules = JSON.parse(block.getAttribute('data-show-if'));
+        var show = Object.keys(rules).every(function (id) { return rules[id].indexOf(value(id)) !== -1; });
+        block.style.display = show ? '' : 'none';
+        block.querySelectorAll('input').forEach(function (i) { i.disabled = !show; });
+      });
+    }
+    form.addEventListener('change', update);
+    update();
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block card_class %}wide{% endblock %}
+{% block title %}Review: {{ assessment.entity_name }}{% endblock %}
+{% block content %}
+<h1>{{ assessment.entity_name }}</h1>
+<p class="subtitle">
+  {{ client.full_name or 'Client' }} &middot; {{ client.email or 'no email' }} &middot; tax year {{ assessment.tax_year }}
+  &middot;
+  {% if assessment.status == 'invited' %}waiting on client
+  {% elif assessment.status == 'submitted' %}ready to review
+  {% elif assessment.status == 'sent' %}letter sent {{ assessment.sent_at[:10] }}
+  {% else %}signed {{ assessment.signed_at[:10] }}{% endif %}
+</p>
+
+{% if not scope %}
+  <p>The client hasn't answered yet. Their questionnaire link:</p>
+  <p style="word-break:break-all;font-size:0.85rem;"><a href="{{ link }}">{{ link }}</a></p>
+{% else %}
+
+  {% if scope.flags %}
+    <p style="font-weight:600;">Preparer notes</p>
+    {% for f in scope.flags %}<div class="flash">{{ f }}</div>{% endfor %}
+  {% endif %}
+
+  <p style="font-weight:600;margin-top:20px;">Services and fees</p>
+  <form method="POST">
+    <table class="fees">
+      <thead>
+        <tr><th>Service</th><th>Why</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th>{% if editable %}<th>Remove</th>{% endif %}</tr>
+      </thead>
+      <tbody>
+        {% for item in scope['items'] %}
+          <tr>
+            <td>{{ item.label }}</td>
+            <td class="help" style="margin:0;">{{ item.reason }}</td>
+            <td class="num">
+              {% if editable and item.unit != 'flat' %}
+                <input type="number" name="qty_{{ loop.index0 }}" value="{{ item.qty }}" min="1" style="width:70px;">
+              {% else %}{{ item.qty }}{% endif %}
+            </td>
+            <td class="num">{{ format_money(item.unit_price) }}</td>
+            <td class="num">{{ format_money(item.amount) }}</td>
+            {% if editable %}
+              <td>{% if item.code != 'TAX-PREP' %}<input type="checkbox" name="remove_{{ loop.index0 }}" value="1">{% endif %}</td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        <tr>
+          <td colspan="4" style="font-weight:600;">Total</td>
+          <td class="num" style="font-weight:600;">{{ format_money(scope.total) }}</td>
+          {% if editable %}<td></td>{% endif %}
+        </tr>
+      </tbody>
+    </table>
+
+    {% if editable %}
+      {% if addable %}
+        <label>Add a service</label>
+        <select name="add_code">
+          <option value="">Don't add anything</option>
+          {% for code in addable %}<option value="{{ code }}">{{ labels[code] }}</option>{% endfor %}
+        </select>
+      {% endif %}
+
+      {% if scope.unpriced %}
+        <div class="warn">
+          These services don't have a price yet: {{ scope.unpriced | join(', ') }}.
+          Set them in <code>pricing.py</code> and redeploy, then this page picks them up.
+        </div>
+      {% endif %}
+      {% if missing_setup %}
+        <div class="warn">PandaDoc setup still needed before sending: {{ missing_setup | join(', ') }}.
+          See docs/year-end/README.md.</div>
+      {% endif %}
+
+      <button type="submit" name="action" value="save" style="background:#f0edf7;color:#000;">Save Changes</button>
+      <button type="submit" name="action" value="send" class="btn-gold"
+              {% if scope.unpriced or missing_setup %}disabled style="opacity:0.5;cursor:not-allowed;"{% endif %}
+              onclick="return confirm('Send this engagement letter to {{ client.email }} for signature?');">
+        Send Engagement Letter
+      </button>
+    {% endif %}
+  </form>
+
+  <p style="font-weight:600;margin-top:32px;">Letter preview</p>
+  <p class="help">Built only from the approved clauses in engagement_clauses.py. This is what PandaDoc assembles for the client.</p>
+  <div class="letter">
+    <h2 style="font-size:1.1rem;margin-top:0;">{{ letter.title }}</h2>
+    <p><strong>Jehovah Jireh Tax Consultants</strong> &middot; <em>Your Vision Is Our Mission.</em></p>
+    <p>{{ letter.intro }}</p>
+    <h3>Scope of Services</h3>
+    {% for s in letter.scope %}
+      <h3>{{ loop.index }}. {{ s.title }}</h3>
+      <p>{{ s.text }}</p>
+    {% endfor %}
+    <h3>Fees and Payment</h3>
+    <p>{{ letter.fees_intro }}</p>
+    <table class="fees">
+      {% for row in letter.fee_rows %}
+        <tr><td>{{ row.label }}{% if row.detail %}<br><span class="help">{{ row.detail }}</span>{% endif %}</td><td class="num">{{ row.amount }}</td></tr>
+      {% endfor %}
+      <tr><td style="font-weight:600;">Total</td><td class="num" style="font-weight:600;">{{ letter.total }}</td></tr>
+    </table>
+    {% for title, text in letter.terms %}
+      <h3>{{ title }}</h3>
+      <p>{{ text }}</p>
+    {% endfor %}
+    <p style="margin-top:20px;">Client signature: ______________________ &nbsp; Date: __________</p>
+    <p>JJTC representative: ______________________ &nbsp; Date: __________</p>
+  </div>
+
+  <p style="font-weight:600;margin-top:32px;">Client's answers</p>
+  <table class="fees">
+    {% for text, value in answer_rows %}
+      <tr><td>{{ text }}</td><td class="num">{{ value }}</td></tr>
+    {% endfor %}
+  </table>
+{% endif %}
+
+<p style="margin-top:24px;"><a href="{{ url_for('dashboard_year_end') }}">&larr; All year-end engagements</a></p>
+{% endblock %}

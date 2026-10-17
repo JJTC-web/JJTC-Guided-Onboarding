@@ -4,6 +4,8 @@
 <h1>Admin Dashboard</h1>
 <p class="subtitle">NPS feedback from clients going through onboarding.</p>
 
+<a href="{{ url_for('dashboard_year_end') }}" class="btn btn-gold" style="margin-top:0;margin-bottom:20px;">Year-End Engagements &rarr;</a>
+
 <div class="checklist-item">
   <div class="step-title">NPS Score</div>
   <span class="badge badge-complete">{{ summary.score }}</span>

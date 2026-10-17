@@ -1,4 +1,5 @@
 import hmac
+import json
 import os
 from datetime import datetime
 from functools import wraps
@@ -8,8 +9,10 @@ import resend
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 
 import db
+import engagement_clauses
 import policy
 import situations
+import year_end
 from integrations import pandadoc, financial_cents, resend_email, google_translate, supabase_auth
 
 app = Flask(__name__)
@@ -77,6 +80,55 @@ def check_portal_upload(client_id, source, email, full_name):
         except Exception:
             pass  # staff can still see the flag and follow up manually
     return fc_client, file_count
+
+
+def external_url(endpoint, **values):
+    """
+    Full link for emails. Uses APP_BASE_URL (e.g. https://onboarding.jjtc.info)
+    when set, so links are right even behind Railway's proxy.
+    """
+    base = os.environ.get("APP_BASE_URL")
+    if base:
+        return base.rstrip("/") + url_for(endpoint, **values)
+    return url_for(endpoint, _external=True, **values)
+
+
+def invite_year_end(client, entity_name, tax_year):
+    """
+    Creates a year-end questionnaire for one client + business and emails
+    them the link. Returns (assessment_id, link, emailed).
+    """
+    assessment_id, token = db.create_year_end_invite(client["id"], entity_name, tax_year)
+    link = external_url("year_end_questionnaire", token=token)
+    emailed = False
+    if client.get("email"):
+        try:
+            resend_email.send_year_end_invite(client["email"], client.get("full_name"), entity_name, tax_year, link)
+            emailed = True
+        except Exception as e:
+            app.logger.error("Year-end invite email failed for %s: %s", client.get("email"), e)
+    return assessment_id, link, emailed
+
+
+def send_year_end_letter(assessment, scope):
+    """
+    Sends the year-end engagement letter through PandaDoc and records every
+    service on it in engagement_letters, so the existing scope gate treats
+    each one as covered once the letter is signed. Raises on failure.
+    """
+    if scope["unpriced"]:
+        raise RuntimeError("Set a price for every service before sending: " + ", ".join(scope["unpriced"]))
+    client = db.get_client(assessment["client_id"])
+    if not client or not client.get("email"):
+        raise RuntimeError("This client has no email on file.")
+    document_id = pandadoc.create_year_end_letter(
+        client.get("full_name") or "Client", client["email"], assessment["entity_name"],
+        assessment["tax_year"], scope, year_end.format_money(scope["total"]),
+    )
+    for item in scope["items"]:
+        db.create_pending_addendum(assessment["client_id"], item["code"], current_year(), document_id)
+    db.mark_year_end_sent(assessment["id"], document_id, json.dumps(scope), scope["total"])
+    return document_id
 
 
 def _safe_next_url(next_url):
@@ -498,6 +550,30 @@ def pandadoc_signed_webhook():
         if not document_id or status != "document.completed":
             continue
 
+        # Year-end letters cover several services in one document: mark all
+        # of them signed, invoice them together, and skip the repeat-offender
+        # count (these were agreed up front, not requested mid-engagement).
+        year_end_assessment = db.get_year_end_by_document(document_id)
+        if year_end_assessment:
+            db.mark_addendum_signed(document_id)
+            db.mark_year_end_signed(document_id)
+            client = db.get_client(year_end_assessment["client_id"])
+            scope = json.loads(year_end_assessment["scope_json"] or "{}")
+            try:
+                fc_client = financial_cents.find_client_by_email(client.get("email")) if client else None
+                if fc_client:
+                    financial_cents.create_invoice_for_service(
+                        fc_client["id"], "YEAR-END",
+                        f"{year_end_assessment['tax_year']} year-end services - {year_end_assessment['entity_name']}",
+                        line_items=[
+                            {"description": i["label"], "quantity": i["qty"], "rate": i["unit_price"]}
+                            for i in scope.get("items", [])
+                        ],
+                    )
+            except Exception:
+                pass  # invoicing failure shouldn't block recording the signature
+            continue
+
         pending = db.get_pending_addendum_by_document(document_id)
         if not pending:
             continue  # not one of our tracked addenda (e.g. an intake esign step)
@@ -599,7 +675,7 @@ def annual_reengagement_check():
         return "unauthorized", 401
 
     year = current_year()
-    sent = flagged = skipped = 0
+    sent = flagged = skipped = invited = 0
     for client in db.get_active_clients():
         email = client.get("email")
         if not email or db.has_pending_or_signed_engagement_letter(client["id"], "TAX-PREP", year):
@@ -622,6 +698,18 @@ def annual_reengagement_check():
                 flagged += 1
                 continue
 
+            # Business clients get the year-end questionnaire instead of a
+            # flat TAX-PREP letter: their answers build a letter that covers
+            # the return plus any cleanup, reclassification or other work.
+            if client.get("situation") in year_end.BUSINESS_SITUATIONS:
+                tax_year = year - 1
+                if not db.has_year_end_invite(client["id"], tax_year):
+                    invite_year_end(client, client.get("full_name") or "Your business", tax_year)
+                    invited += 1
+                else:
+                    skipped += 1
+                continue
+
             document_id = pandadoc.generate_addendum("TAX-PREP", client.get("full_name") or "Client", email)
             db.create_pending_addendum(client["id"], "TAX-PREP", year, document_id)
             sent += 1
@@ -629,9 +717,195 @@ def annual_reengagement_check():
             flagged += 1
 
     if session.get("is_admin"):
-        flash(f"Annual re-engagement check complete - {sent} letter(s) sent, {flagged} flagged for review, {skipped} skipped.")
+        flash(
+            f"Annual re-engagement check complete - {sent} letter(s) sent, {invited} year-end "
+            f"questionnaire(s) sent, {flagged} flagged for review, {skipped} skipped."
+        )
         return redirect(url_for("dashboard"))
-    return {"sent": sent, "flagged": flagged, "skipped": skipped}, 200
+    return {"sent": sent, "invited": invited, "flagged": flagged, "skipped": skipped}, 200
+
+
+# --- Year-end questionnaire (client) ----------------------------------------
+
+@app.route("/year-end/<token>", methods=["GET", "POST"])
+def year_end_questionnaire(token):
+    """
+    The client's year-end questionnaire. Their answers decide which services
+    go on this year's engagement letter. Can be re-answered until the letter
+    is sent; after that it shows the confirmation page.
+    """
+    assessment = db.get_year_end_by_token(token)
+    if not assessment:
+        return render_template("year_end_missing.html"), 404
+    if assessment["status"] in ("sent", "signed"):
+        return redirect(url_for("year_end_done", token=token))
+
+    previous = json.loads(assessment["answers_json"]) if assessment["answers_json"] else {}
+
+    if request.method == "POST":
+        entity_name = request.form.get("entity_name", "").strip() or assessment["entity_name"]
+        answers, errors = year_end.clean_answers(request.form)
+        if errors:
+            flash("Please answer every question. Missing: " + "; ".join(errors))
+            return render_template(
+                "year_end_questionnaire.html", assessment=assessment, questions=year_end.QUESTIONS,
+                answers=request.form, entity_name=entity_name,
+            )
+
+        scope = year_end.assess(answers)
+        db.save_year_end_answers(
+            assessment["id"], entity_name, json.dumps(answers), json.dumps(scope), scope["total"],
+        )
+        assessment = db.get_year_end(assessment["id"])
+        client = db.get_client(assessment["client_id"]) or {}
+
+        auto_send = os.environ.get("YEAR_END_AUTO_SEND", "").lower() == "true"
+        if auto_send and not scope["flags"] and not scope["unpriced"]:
+            try:
+                send_year_end_letter(assessment, scope)
+            except Exception as e:
+                app.logger.error("Year-end auto-send failed for %s: %s", assessment["id"], e)
+
+        admin_email = os.environ.get("ADMIN_EMAIL")
+        if admin_email:
+            try:
+                resend_email.send_year_end_submitted_notice(
+                    admin_email, client.get("full_name"), entity_name, assessment["tax_year"],
+                    external_url("dashboard_year_end_review", assessment_id=assessment["id"]), scope["flags"],
+                )
+            except Exception as e:
+                app.logger.error("Year-end admin notice failed: %s", e)
+
+        return redirect(url_for("year_end_done", token=token))
+
+    return render_template(
+        "year_end_questionnaire.html", assessment=assessment, questions=year_end.QUESTIONS,
+        answers=previous, entity_name=assessment["entity_name"] or "",
+    )
+
+
+@app.route("/year-end/<token>/done")
+def year_end_done(token):
+    assessment = db.get_year_end_by_token(token)
+    if not assessment or not assessment["scope_json"]:
+        return redirect(url_for("year_end_questionnaire", token=token))
+    scope = json.loads(assessment["scope_json"])
+    return render_template("year_end_done.html", assessment=assessment, scope=scope)
+
+
+# --- Year-end review (admin) ------------------------------------------------
+
+@app.route("/dashboard/year-end")
+@require_admin
+def dashboard_year_end():
+    return render_template(
+        "year_end_admin_list.html",
+        assessments=db.list_year_end(),
+        default_tax_year=current_year() - 1,
+        format_money=year_end.format_money,
+    )
+
+
+@app.route("/dashboard/year-end/invite", methods=["POST"])
+@require_admin
+def dashboard_year_end_invite():
+    full_name = request.form.get("full_name", "").strip()
+    email = request.form.get("email", "").strip()
+    entity_name = request.form.get("entity_name", "").strip()
+    try:
+        tax_year = int(request.form.get("tax_year", current_year() - 1))
+    except ValueError:
+        tax_year = current_year() - 1
+    if not (full_name and email and entity_name):
+        flash("Name, email and business name are all required.")
+        return redirect(url_for("dashboard_year_end"))
+
+    client = db.get_client_by_email(email)
+    if not client:
+        client_id = db.create_client()
+        db.set_client_contact(client_id, full_name, email)
+        client = db.get_client(client_id)
+
+    _, link, emailed = invite_year_end(client, entity_name, tax_year)
+    if emailed:
+        flash(f"Questionnaire emailed to {email}. Link: {link}")
+    else:
+        flash(f"Questionnaire created, but the email didn't send. Send this link yourself: {link}")
+    return redirect(url_for("dashboard_year_end"))
+
+
+def _apply_scope_edits(scope, form):
+    """Applies the preparer's quantity edits, removals and additions."""
+    kept = []
+    for i, item in enumerate(scope["items"]):
+        if item["code"] != "TAX-PREP" and form.get(f"remove_{i}"):
+            continue
+        try:
+            item["qty"] = max(1, int(form.get(f"qty_{i}", item["qty"])))
+        except ValueError:
+            pass
+        kept.append(item)
+    scope["items"] = kept
+
+    add_code = form.get("add_code")
+    if add_code and add_code in year_end.SERVICE_LABELS and add_code != "TAX-PREP" \
+            and add_code not in {i["code"] for i in scope["items"]}:
+        scope["items"].append(year_end._add_on(add_code, 1, "Added by preparer during review."))
+    return year_end.refresh_prices(scope)
+
+
+@app.route("/dashboard/year-end/<assessment_id>", methods=["GET", "POST"])
+@require_admin
+def dashboard_year_end_review(assessment_id):
+    assessment = db.get_year_end(assessment_id)
+    if not assessment:
+        flash("That questionnaire wasn't found.")
+        return redirect(url_for("dashboard_year_end"))
+    client = db.get_client(assessment["client_id"]) or {}
+    scope = json.loads(assessment["scope_json"]) if assessment["scope_json"] else None
+    editable = assessment["status"] == "submitted"
+
+    if scope and editable:
+        scope = year_end.refresh_prices(scope)
+
+    if request.method == "POST" and scope and editable:
+        scope = _apply_scope_edits(scope, request.form)
+        db.update_year_end_scope(assessment_id, json.dumps(scope), scope["total"])
+        if request.form.get("action") == "send":
+            try:
+                send_year_end_letter(assessment, scope)
+                flash("Engagement letter sent for signature.")
+            except Exception as e:
+                flash(f"Couldn't send the letter: {e}")
+        else:
+            flash("Scope updated.")
+        return redirect(url_for("dashboard_year_end_review", assessment_id=assessment_id))
+
+    answers = json.loads(assessment["answers_json"]) if assessment["answers_json"] else {}
+    answer_rows = []
+    for q in year_end.QUESTIONS:
+        if q["id"] in answers:
+            value = answers[q["id"]]
+            if q["type"] == "choice":
+                value = dict(q["options"]).get(value, value)
+            answer_rows.append((q["text"], value))
+
+    letter = None
+    missing_setup = []
+    if scope:
+        letter = engagement_clauses.build_letter(
+            scope, client.get("full_name") or "Client", assessment["entity_name"], assessment["tax_year"],
+        )
+        missing_setup = pandadoc.missing_year_end_setup([i["code"] for i in scope["items"]])
+
+    addable = [c for c in year_end.SERVICE_LABELS
+               if c != "TAX-PREP" and scope and c not in {i["code"] for i in scope["items"]}]
+    return render_template(
+        "year_end_review.html", assessment=assessment, client=client, scope=scope, letter=letter,
+        answer_rows=answer_rows, editable=editable, addable=addable, labels=year_end.SERVICE_LABELS,
+        format_money=year_end.format_money, missing_setup=missing_setup,
+        link=external_url("year_end_questionnaire", token=assessment["token"]),
+    )
 
 
 @app.route("/progress")

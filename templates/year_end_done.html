@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Thank You{% endblock %}
+{% block content %}
+<h1>Thank you!</h1>
+<p class="subtitle">{{ assessment.entity_name }} &middot; tax year {{ assessment.tax_year }}</p>
+
+{% if assessment.status == 'signed' %}
+  <div class="flash" style="background:#dff5e1;border-color:#1e7a34;color:#1e7a34;">
+    Your engagement letter is signed. We'll start as soon as your invoice is paid and your documents are in your portal.
+  </div>
+{% elif assessment.status == 'sent' %}
+  <div class="flash">Your engagement letter has been emailed to you for signature. Work begins once it's signed and paid.</div>
+{% else %}
+  <p>We'll review your answers and email your engagement letter for signature shortly.</p>
+{% endif %}
+
+<p style="font-weight:600;margin-top:24px;">Based on your answers, your engagement will include:</p>
+<ul style="font-size:0.9rem;">
+  {% for item in scope['items'] %}<li>{{ item.label }}</li>{% endfor %}
+</ul>
+
+<p style="font-weight:600;margin-top:24px;">Upload these to your client portal:</p>
+<ul style="font-size:0.9rem;">
+  {% for doc in scope.documents %}<li>{{ doc }}</li>{% endfor %}
+</ul>
+<p class="help">{{ policy.PORTAL_DOCUMENT_POLICY }}</p>
+
+{% if assessment.status not in ('sent', 'signed') %}
+  <p style="margin-top:20px;"><a href="{{ url_for('year_end_questionnaire', token=assessment.token) }}">Need to change an answer?</a></p>
+{% endif %}
+{% endblock %}

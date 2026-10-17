@@ -111,7 +111,7 @@ def get_completed_client_tasks(since=None):
     return resp.json().get("data", [])
 
 
-def create_invoice_for_service(fc_client_id, service_code, description=None):
+def create_invoice_for_service(fc_client_id, service_code, description=None, line_items=None):
     """
     Creates an invoice for out-of-scope work once its addendum is signed
     (Section 4: "no addendum signature -> no invoice -> no work starts").
@@ -124,6 +124,10 @@ def create_invoice_for_service(fc_client_id, service_code, description=None):
         "client_id": fc_client_id,
         "description": description or f"{service_code} services",
     }
+    if line_items:
+        # Year-end letters invoice every service on the signed letter at
+        # once: [{"description": ..., "quantity": ..., "rate": ...}, ...]
+        payload["line_items"] = line_items
     resp = requests.post(f"{FC_API_BASE}/invoices", json=payload, headers=_headers())
     resp.raise_for_status()
     return resp.json()

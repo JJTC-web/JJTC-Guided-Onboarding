@@ -30,8 +30,10 @@ OUT_OF_SCOPE_SERVICE_CODES = ("BOOKKEEPING", "CLEANUP", "ANNUAL-REPORT", "SALES-
 
 # A single upload batch (or a Financial Cents portal upload) at or above this
 # many files is flagged as "possible cleanup/bookkeeping scope" rather than
-# silently filed as standard document intake (Section 2.2).
-FILE_COUNT_ANOMALY_THRESHOLD = int(os.environ.get("FILE_COUNT_ANOMALY_THRESHOLD", "10"))
+# silently filed as standard document intake (Section 2.2). Set high enough
+# that a multi-store owner uploading a full year of statements (roughly 25-30
+# files per store) doesn't trigger it; override with the env var if needed.
+FILE_COUNT_ANOMALY_THRESHOLD = int(os.environ.get("FILE_COUNT_ANOMALY_THRESHOLD", "100"))
 
 # Keyword -> service code mapping used when polling Financial Cents client
 # portal tasks for scope-triggering requests (Section 6.5,

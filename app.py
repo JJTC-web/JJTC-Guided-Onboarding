@@ -844,6 +844,18 @@ def _apply_scope_edits(scope, form):
             item["qty"] = max(1, int(form.get(f"qty_{i}", item["qty"])))
         except ValueError:
             pass
+        if item["code"] == "TAX-PREP":
+            # Base price can be set per client (e.g. an existing client
+            # already quoted a lower fee). Blank = use pricing.py.
+            raw = (form.get("base_price") or "").strip().replace("$", "").replace(",", "")
+            if raw:
+                try:
+                    item["unit_price"] = max(0, round(float(raw), 2))
+                    item["price_override"] = True
+                except ValueError:
+                    pass
+            elif "base_price" in form:
+                item.pop("price_override", None)
         kept.append(item)
     scope["items"] = kept
 

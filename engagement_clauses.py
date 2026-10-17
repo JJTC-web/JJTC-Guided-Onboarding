@@ -47,7 +47,8 @@ SCOPE_CLAUSES = {
         "title": "Bookkeeping Cleanup and Reconciliation",
         "text": (
             "JJTC will enter, categorize and reconcile up to {qty} {unit}(s) of business "
-            "transactions to your bank and credit card statements so the return can be "
+            "transactions (one month of transactions for one store or location) to your "
+            "bank and credit card statements so the return can be "
             "prepared from accurate books. You agree to provide every statement for the "
             "period. If statements are missing and must be reconstructed, or the volume "
             "of transactions is substantially higher than expected, we will tell you "

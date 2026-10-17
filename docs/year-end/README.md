@@ -30,7 +30,7 @@ in one click. No signature and payment, no work.
 | Client answer | Service added | Priced by |
 | --- | --- | --- |
 | Any business return | Business Tax Return Preparation | Entity type |
-| Books not kept, or months not reconciled | Bookkeeping Cleanup and Reconciliation | Month |
+| Books not kept, or months not reconciled | Bookkeeping Cleanup and Reconciliation | Month, per store |
 | Business paid personal expenses | Owner Distribution and Personal Expense Reclassification | Flat |
 | Last year's return prepared elsewhere or by the owner | Prior-Year Balance Review and Correction | Flat |
 | Sells products, no year-end inventory count | Inventory Reconciliation | Flat |
@@ -43,9 +43,28 @@ Missing statements and other businesses are shown as **preparer notes**
 
 ## Step 1: Set your prices
 
-Open `pricing.py`. Every price is `None` (not set) except the S corporation
-return at $825. Fill in a number for each one. Use `0` for anything you want
-to include at no charge.
+Prices are set in `pricing.py`:
+
+| Service | Price |
+| --- | --- |
+| 1120-S return (clean books) | $1,195 |
+| 1065 return | $1,195 |
+| 1120 return | $1,295 |
+| Schedule C return | not set |
+| Bookkeeping cleanup | $85 per month, per store |
+| Personal expense reclassification | $250 |
+| Prior-year balance review | $350 |
+| Inventory reconciliation | $300 |
+| Reasonable compensation review | $350 |
+| New asset setup | $50 per asset |
+| Notice review and response | $150 per notice |
+
+Change any number there and redeploy. Use `0` for anything you want to
+include at no charge, or `None` to leave a price unset.
+
+For an existing client already quoted a different fee (such as $875), type
+their price in the base price box on the review page. Leave it blank to use
+the standard price. Add-ons still apply based on their answers.
 
 The app will not let you send a letter until every price on it is set.
 
@@ -65,7 +84,7 @@ once. Change anything you want here.
    - Where it says `{client_name}`, `{entity_name}` or `{tax_year}`, use the
      tokens `[Engagement.ClientName]`, `[Engagement.EntityName]` and
      `[Engagement.TaxYear]`.
-   - Where it says `{unit}`, type the word (month, asset, notice).
+   - Where it says `{unit}`, type the word (store-month, asset, notice).
    - Copy each item's ID into its env var (table below).
 2. **Create the template.** **Templates → New Template**, named
    "Year-End Engagement Letter":

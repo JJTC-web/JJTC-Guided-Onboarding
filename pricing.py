@@ -17,27 +17,28 @@ were already sent keep the price they were sent with.
 
 # Base fee for preparing the business return itself, by entity type.
 BASE_RETURN_FEES = {
-    "s_corp": 825,        # Form 1120-S - your current fee; raise it here when you're ready
-    "partnership": None,  # Form 1065
-    "c_corp": None,       # Form 1120
+    "s_corp": 1195,       # Form 1120-S (clean books, about 5 hours)
+    "partnership": 1195,  # Form 1065
+    "c_corp": 1295,       # Form 1120
     "schedule_c": None,   # Single-owner business reported on Schedule C
 }
 
 # Add-on services the questionnaire can trigger. "unit" says what one unit
 # is, so the letter can show "3 months x $___" instead of a lump sum.
 ADD_ON_FEES = {
-    "CLEANUP": {"unit": "month", "price": None},            # per month of unreconciled books
-    "DIST-RECLASS": {"unit": "flat", "price": None},        # owner personal expenses reclassified
-    "PRIOR-YEAR-REVIEW": {"unit": "flat", "price": None},   # review of another preparer's prior-year balances
-    "INVENTORY": {"unit": "flat", "price": None},           # inventory reconciliation, no year-end count
-    "RC-REVIEW": {"unit": "flat", "price": None},           # reasonable compensation review, per entity
-    "ASSETS": {"unit": "asset", "price": None},             # per new asset added to the depreciation schedule
-    "NOTICE": {"unit": "notice", "price": None},            # per IRS/state notice reviewed and answered
+    "CLEANUP": {"unit": "store_month", "price": 85},        # per month of unreconciled books, per store
+    "DIST-RECLASS": {"unit": "flat", "price": 250},        # owner personal expenses reclassified
+    "PRIOR-YEAR-REVIEW": {"unit": "flat", "price": 350},   # review of another preparer's prior-year balances
+    "INVENTORY": {"unit": "flat", "price": 300},           # inventory reconciliation, no year-end count
+    "RC-REVIEW": {"unit": "flat", "price": 350},           # reasonable compensation review, per entity
+    "ASSETS": {"unit": "asset", "price": 50},             # per new asset added to the depreciation schedule
+    "NOTICE": {"unit": "notice", "price": 150},            # per IRS/state notice reviewed and answered
 }
 
 UNIT_LABELS = {
     "flat": "",
     "month": "month",
+    "store_month": "store-month",
     "asset": "asset",
     "notice": "notice",
 }

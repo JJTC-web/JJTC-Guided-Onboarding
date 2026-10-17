@@ -73,6 +73,14 @@ QUESTIONS = [
         "show_if": {"books_method": ["software", "spreadsheet"]},
     },
     {
+        "id": "store_count",
+        "text": "How many stores or business locations does this business have?",
+        "type": "number",
+        "min": 1,
+        "max": 50,
+        "help": "Count each location that keeps its own sales and expenses.",
+    },
+    {
         "id": "all_statements",
         "text": "Do you have every bank and credit card statement for the year, including December?",
         "type": "yes_no",
@@ -188,7 +196,7 @@ def clean_answers(form):
             except ValueError:
                 errors.append(q["text"])
                 continue
-            answers[q["id"]] = max(0, min(value, q.get("max", 999)))
+            answers[q["id"]] = max(q.get("min", 0), min(value, q.get("max", 999)))
         elif q["type"] == "yes_no":
             if raw not in ("yes", "no"):
                 errors.append(q["text"])
@@ -235,12 +243,21 @@ def assess(answers):
         "amount": base_price,
     })
 
-    # Bookkeeping cleanup: unreconciled months, or no books at all.
+    # Bookkeeping cleanup: unreconciled months (or all 12 with no books),
+    # multiplied by the number of stores, priced per store-month.
+    stores = answers.get("store_count", 1)
+    store_text = f" across {stores} stores" if stores > 1 else ""
     if answers.get("books_method") == "none":
-        items.append(_add_on("CLEANUP", 12, "No bookkeeping system for the year; all 12 months need to be entered and reconciled."))
+        items.append(_add_on(
+            "CLEANUP", 12 * stores,
+            f"No bookkeeping system for the year; all 12 months need to be entered and reconciled{store_text}.",
+        ))
     elif answers.get("months_unreconciled", 0) > 0:
         months = answers["months_unreconciled"]
-        items.append(_add_on("CLEANUP", months, f"{months} month(s) not yet entered and reconciled to the bank."))
+        items.append(_add_on(
+            "CLEANUP", months * stores,
+            f"{months} month(s) not yet entered and reconciled to the bank{store_text}.",
+        ))
 
     if answers.get("all_statements") == "no":
         flags.append("Missing bank or credit card statements. Chase these before starting; reconstructing them adds cleanup time.")
@@ -330,6 +347,8 @@ def refresh_prices(scope):
     draft letter. Never call this on a letter that was already sent.
     """
     for item in scope["items"]:
+        if item.get("price_override"):
+            continue  # preparer set this price by hand on the review page
         if item["code"] == "TAX-PREP":
             item["unit_price"] = pricing.BASE_RETURN_FEES.get(scope.get("entity_type"))
         elif item["code"] in pricing.ADD_ON_FEES:

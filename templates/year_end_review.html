@@ -38,7 +38,14 @@
                 <input type="number" name="qty_{{ loop.index0 }}" value="{{ item.qty }}" min="1" style="width:70px;">
               {% else %}{{ item.qty }}{% endif %}
             </td>
-            <td class="num">{{ format_money(item.unit_price) }}</td>
+            <td class="num">
+              {% if editable and item.code == 'TAX-PREP' %}
+                <input type="number" name="base_price" step="0.01" min="0" style="width:100px;"
+                       value="{{ item.unit_price if item.price_override else '' }}"
+                       placeholder="{{ item.unit_price if item.unit_price is not none else '' }}"
+                       title="Leave blank to use the standard price">
+              {% else %}{{ format_money(item.unit_price) }}{% endif %}
+            </td>
             <td class="num">{{ format_money(item.amount) }}</td>
             {% if editable %}
               <td>{% if item.code != 'TAX-PREP' %}<input type="checkbox" name="remove_{{ loop.index0 }}" value="1">{% endif %}</td>
@@ -54,6 +61,7 @@
     </table>
 
     {% if editable %}
+      <p class="help">Base price: leave blank for the standard price, or type a different one for this client (for example, an existing client already quoted $875).</p>
       {% if addable %}
         <label>Add a service</label>
         <select name="add_code">

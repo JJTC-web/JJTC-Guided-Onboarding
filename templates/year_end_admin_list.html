@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block card_class %}wide{% endblock %}
+{% block title %}Year-End Engagements{% endblock %}
+{% block content %}
+<h1>Year-End Engagements</h1>
+<p class="subtitle">Questionnaires sent to business clients, and the engagement letters built from their answers.</p>
+
+<p style="font-weight:600;">Send a questionnaire</p>
+<p class="help">One per business. A client with several companies gets one for each.</p>
+<form method="POST" action="{{ url_for('dashboard_year_end_invite') }}">
+  <label>Client full name</label>
+  <input type="text" name="full_name" required>
+  <label>Client email</label>
+  <input type="email" name="email" required>
+  <label>Business name</label>
+  <input type="text" name="entity_name" required>
+  <label>Tax year</label>
+  <input type="number" name="tax_year" value="{{ default_tax_year }}" min="2000" max="2100">
+  <button type="submit" class="btn-gold">Create and Email Questionnaire</button>
+</form>
+
+<p style="font-weight:600;margin-top:32px;">All questionnaires</p>
+<table class="fees">
+  <thead>
+    <tr><th>Business</th><th>Client</th><th>Year</th><th>Status</th><th class="num">Total</th></tr>
+  </thead>
+  <tbody>
+    {% for a in assessments %}
+      <tr>
+        <td><a href="{{ url_for('dashboard_year_end_review', assessment_id=a.id) }}">{{ a.entity_name }}</a></td>
+        <td>{{ a.full_name or '' }}<br><span class="help">{{ a.email or '' }}</span></td>
+        <td>{{ a.tax_year }}</td>
+        <td>
+          {% if a.status == 'invited' %}<span class="badge badge-locked">Waiting on client</span>
+          {% elif a.status == 'submitted' %}<span class="badge badge-action">Ready to review</span>
+          {% elif a.status == 'sent' %}<span class="badge badge-pending">Letter sent</span>
+          {% else %}<span class="badge badge-complete">Signed</span>{% endif %}
+        </td>
+        <td class="num">{{ format_money(a.total) if a.status != 'invited' else '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="help">No questionnaires yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p style="margin-top:24px;"><a href="{{ url_for('dashboard') }}">&larr; Back to dashboard</a></p>
+{% endblock %}

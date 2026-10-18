@@ -72,3 +72,32 @@ def send_nps_digest(summary, to_email):
     """
 
     return send_email(to=to_email, subject="NPS Digest - JJTC Guided Onboarding", html=html)
+
+
+def send_year_end_invite(to, client_name, entity_name, tax_year, link):
+    """Emails a client their year-end questionnaire link."""
+    first = escape((client_name or "there").split(" ")[0])
+    html = f"""
+    <p>Hi {first},</p>
+    <p>It's time to get your {tax_year} business return started for <strong>{escape(entity_name)}</strong>.</p>
+    <p>Please answer a few quick questions about your business year. It takes about five minutes,
+    and it tells us exactly what your return will need so there are no surprises later.</p>
+    <p><a href="{escape(link)}">Start your year-end questionnaire</a></p>
+    <p>Once you're done, we'll send your engagement letter for signature and a list of the
+    documents to upload to your client portal.</p>
+    <p>Lady Emily<br>Jehovah Jireh Tax Consultants<br><em>Your Vision Is Our Mission.</em></p>
+    """
+    return send_email(to=to, subject=f"Your {tax_year} year-end questionnaire for {entity_name}", html=html)
+
+
+def send_year_end_submitted_notice(to, client_name, entity_name, tax_year, review_link, flags):
+    """Tells the admin a client finished the questionnaire and their letter is ready to review."""
+    flags_html = "".join(f"<li>{escape(f)}</li>" for f in flags) or "<li>None</li>"
+    html = f"""
+    <p><strong>{escape(client_name or 'A client')}</strong> finished the {tax_year} year-end questionnaire
+    for <strong>{escape(entity_name)}</strong>.</p>
+    <p>Preparer notes:</p>
+    <ul>{flags_html}</ul>
+    <p><a href="{escape(review_link)}">Review scope and send the engagement letter</a></p>
+    """
+    return send_email(to=to, subject=f"Year-end questionnaire submitted: {entity_name}", html=html)

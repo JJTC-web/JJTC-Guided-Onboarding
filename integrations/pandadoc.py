@@ -32,6 +32,7 @@ Setup required before this works live:
 import hashlib
 import hmac
 import os
+import time
 
 import requests
 
@@ -81,6 +82,32 @@ def _raise_for_status_with_detail(resp):
         raise RuntimeError(f"{resp.status_code} error from PandaDoc: {resp.text}")
 
 
+def _wait_for_draft(document_id, timeout_seconds=30):
+    """
+    PandaDoc creates documents asynchronously: a new document starts as
+    'document.uploaded' and can only be sent once it reaches 'document.draft'.
+    Sending too early fails, so wait (briefly) for draft first.
+    """
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if get_document_status(document_id) == "document.draft":
+            return
+        time.sleep(1)
+    raise RuntimeError(
+        f"PandaDoc document {document_id} was created but wasn't ready to send after "
+        f"{timeout_seconds} seconds. It's saved in PandaDoc as a draft - open it there and send it manually."
+    )
+
+
+def _recipient(client_name, client_email):
+    return {
+        "email": client_email,
+        "first_name": client_name.split(" ")[0] if client_name else "Client",
+        "last_name": client_name.split(" ")[-1] if client_name and " " in client_name else "",
+        "role": "Client",
+    }
+
+
 def create_document_from_template(step_id, client_name, client_email):
     """
     Creates a PandaDoc document from the appropriate template and sends it
@@ -107,6 +134,7 @@ def create_document_from_template(step_id, client_name, client_email):
     _raise_for_status_with_detail(resp)
     doc = resp.json()
     document_id = doc["id"]
+    _wait_for_draft(document_id)
 
     # Send the document for signature
     send_resp = requests.post(
@@ -161,6 +189,7 @@ def generate_addendum(service_code, client_name, client_email):
     resp = requests.post(f"{PANDADOC_API_BASE}/documents", json=payload, headers=_headers())
     _raise_for_status_with_detail(resp)
     document_id = resp.json()["id"]
+    _wait_for_draft(document_id)
 
     send_resp = requests.post(
         f"{PANDADOC_API_BASE}/documents/{document_id}/send",
@@ -192,3 +221,94 @@ def verify_webhook_signature(request_body, signature_header):
         return False
     expected = hmac.new(shared_key.encode(), request_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature_header)
+
+
+# --- Year-end engagement letter ---------------------------------------------
+# One PandaDoc template ("Year-End Engagement Letter") with:
+#   - a Content Placeholder block where the approved scope clauses go. Each
+#     clause in engagement_clauses.SCOPE_CLAUSES is saved once as a PandaDoc
+#     Content Library Item; its ID goes in PANDADOC_CLAUSE_<CODE>.
+#   - a pricing table with data merge columns Name, Description, Price, QTY.
+#   - tokens [Engagement.EntityName], [Engagement.TaxYear], [Engagement.Total].
+# Setup steps: docs/year-end/README.md
+
+def _clause_env_name(service_code):
+    return "PANDADOC_CLAUSE_" + service_code.replace("-", "_")
+
+
+def missing_year_end_setup(service_codes):
+    """Names of env vars still missing for a year-end letter with these codes."""
+    needed = ["PANDADOC_API_KEY", "PANDADOC_YEAR_END_TEMPLATE_ID", "PANDADOC_YEAR_END_SCOPE_BLOCK_ID"]
+    needed += [_clause_env_name(code) for code in service_codes]
+    return [name for name in needed if not os.environ.get(name)]
+
+
+def create_year_end_letter(client_name, client_email, entity_name, tax_year, scope, total_text):
+    """
+    Builds the year-end engagement letter from the PandaDoc template: the
+    approved clauses for each service in scope, a pricing table row per
+    service, and the client/entity/year tokens. Sends it for signature and
+    returns the PandaDoc document ID.
+    """
+    codes = [item["code"] for item in scope["items"]]
+    missing = missing_year_end_setup(codes)
+    if missing:
+        raise RuntimeError("PandaDoc year-end setup is incomplete. Set: " + ", ".join(missing))
+
+    clause_items = []
+    for item in scope["items"]:
+        clause_items.append({
+            "id": os.environ[_clause_env_name(item["code"])],
+            "fields": {"Quantity": {"value": str(item["qty"])}},
+        })
+
+    rows = []
+    for item in scope["items"]:
+        rows.append({
+            "options": {"optional": False, "qty_editable": False},
+            "data": {
+                "Name": item["label"],
+                "Description": item.get("reason", ""),
+                "Price": item["unit_price"],
+                "QTY": item["qty"],
+            },
+        })
+
+    payload = {
+        "name": f"{tax_year} Year-End Engagement Letter - {entity_name}",
+        "template_uuid": os.environ["PANDADOC_YEAR_END_TEMPLATE_ID"],
+        "recipients": [_recipient(client_name, client_email)],
+        "tokens": [
+            {"name": "Engagement.ClientName", "value": client_name},
+            {"name": "Engagement.EntityName", "value": entity_name},
+            {"name": "Engagement.TaxYear", "value": str(tax_year)},
+            {"name": "Engagement.Total", "value": total_text},
+        ],
+        "pricing_tables": [{
+            "name": os.environ.get("PANDADOC_YEAR_END_PRICING_TABLE_NAME", "Pricing Table 1"),
+            "data_merge": True,
+            "sections": [{"title": "Services", "default": True, "rows": rows}],
+        }],
+        "content_placeholders": [{
+            "block_id": os.environ["PANDADOC_YEAR_END_SCOPE_BLOCK_ID"],
+            "content_library_items": clause_items,
+        }],
+    }
+
+    resp = requests.post(f"{PANDADOC_API_BASE}/documents", json=payload, headers=_headers())
+    _raise_for_status_with_detail(resp)
+    document_id = resp.json()["id"]
+    _wait_for_draft(document_id)
+
+    send_resp = requests.post(
+        f"{PANDADOC_API_BASE}/documents/{document_id}/send",
+        json={
+            "message": (
+                f"Here is your {tax_year} engagement letter for {entity_name}, based on your year-end "
+                "questionnaire. Please review and sign so we can get started - Jehovah Jireh Tax Consultants."
+            )
+        },
+        headers=_headers(),
+    )
+    _raise_for_status_with_detail(send_resp)
+    return document_id

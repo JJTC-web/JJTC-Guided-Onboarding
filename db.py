@@ -119,6 +119,24 @@ def init_db():
             resolved_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS year_end_assessments (
+            id TEXT PRIMARY KEY,
+            client_id TEXT,
+            token TEXT UNIQUE,
+            entity_name TEXT,
+            tax_year INTEGER,
+            status TEXT DEFAULT 'invited',
+            answers_json TEXT,
+            scope_json TEXT,
+            total REAL,
+            document_id TEXT,
+            created_at TEXT,
+            submitted_at TEXT,
+            sent_at TEXT,
+            signed_at TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -465,3 +483,97 @@ def list_pending_addenda():
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# --- Year-end questionnaire and engagement letter ---------------------------
+# status: invited -> submitted -> sent -> signed
+
+def create_year_end_invite(client_id, entity_name, tax_year):
+    import secrets
+    conn = get_db()
+    assessment_id = str(uuid.uuid4())
+    token = secrets.token_urlsafe(24)
+    conn.execute(
+        "INSERT INTO year_end_assessments (id, client_id, token, entity_name, tax_year, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, 'invited', ?)",
+        (assessment_id, client_id, token, entity_name, tax_year, datetime.utcnow().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return assessment_id, token
+
+
+def _year_end_row(where, params):
+    conn = get_db()
+    row = conn.execute(f"SELECT * FROM year_end_assessments WHERE {where} LIMIT 1", params).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_year_end(assessment_id):
+    return _year_end_row("id = ?", (assessment_id,))
+
+
+def get_year_end_by_token(token):
+    return _year_end_row("token = ?", (token,))
+
+
+def get_year_end_by_document(document_id):
+    return _year_end_row("document_id = ?", (document_id,))
+
+
+def has_year_end_invite(client_id, tax_year):
+    return _year_end_row("client_id = ? AND tax_year = ?", (client_id, tax_year)) is not None
+
+
+def list_year_end(limit=200):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT y.*, c.full_name, c.email FROM year_end_assessments y "
+        "LEFT JOIN clients c ON c.id = y.client_id ORDER BY y.created_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_year_end_answers(assessment_id, entity_name, answers_json, scope_json, total):
+    conn = get_db()
+    conn.execute(
+        "UPDATE year_end_assessments SET entity_name = ?, answers_json = ?, scope_json = ?, total = ?, "
+        "status = 'submitted', submitted_at = ? WHERE id = ? AND status IN ('invited', 'submitted')",
+        (entity_name, answers_json, scope_json, total, datetime.utcnow().isoformat(), assessment_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_year_end_scope(assessment_id, scope_json, total):
+    conn = get_db()
+    conn.execute(
+        "UPDATE year_end_assessments SET scope_json = ?, total = ? WHERE id = ? AND status = 'submitted'",
+        (scope_json, total, assessment_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_year_end_sent(assessment_id, document_id, scope_json, total):
+    conn = get_db()
+    conn.execute(
+        "UPDATE year_end_assessments SET status = 'sent', document_id = ?, scope_json = ?, total = ?, sent_at = ? "
+        "WHERE id = ?",
+        (document_id, scope_json, total, datetime.utcnow().isoformat(), assessment_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_year_end_signed(document_id):
+    conn = get_db()
+    conn.execute(
+        "UPDATE year_end_assessments SET status = 'signed', signed_at = ? WHERE document_id = ?",
+        (datetime.utcnow().isoformat(), document_id),
+    )
+    conn.commit()
+    conn.close()

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Your Return Status{% endblock %}
+{% block content %}
+<h1>{{ tracker.business_name }}</h1>
+<p class="subtitle">{{ tracker.tax_year }} tax return &middot; updated {{ tracker.updated_at[:10] }}</p>
+
+{% include "_status_timeline.html" %}
+
+<div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;">
+  <p style="font-size:0.85rem;color:#6b6b6b;">{{ policy.PORTAL_DOCUMENT_POLICY }}</p>
+  <p style="font-size:0.85rem;color:#6b6b6b;">Questions about your return? Message us in your client portal.</p>
+</div>
+{% endblock %}

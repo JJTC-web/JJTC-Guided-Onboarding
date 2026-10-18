@@ -34,6 +34,19 @@
   {% endif %}
 {% endif %}
 
+{% if work_trackers %}
+  <div style="margin-top:24px;">
+    <p style="font-weight:600;margin-bottom:6px;">Where your return stands</p>
+    {% for tracker in work_trackers %}
+      <div style="padding:14px 0;border-bottom:1px solid #eee;">
+        <div class="step-title">{{ tracker.business_name }} &middot; {{ tracker.tax_year }}</div>
+        <div class="step-desc" style="margin-bottom:10px;">Updated {{ tracker.updated_at[:10] }}</div>
+        {% include "_status_timeline.html" %}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
 <p style="font-weight:600;margin-top:24px;">Completed</p>
 {% for s in completed %}
   <div class="checklist-item">

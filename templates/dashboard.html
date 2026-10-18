@@ -57,6 +57,8 @@
   <p style="color:#6b6b6b;font-size:0.9rem;">No addenda awaiting signature.</p>
 {% endfor %}
 
+<a href="{{ url_for('dashboard_status') }}" class="btn btn-gold" style="margin-top:28px;">Client Work Status &rarr;</a>
+
 <div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;text-align:center;">
   <form method="POST" action="{{ url_for('poll_scope_triggers') }}">
     <button type="submit" style="background:none;border:none;color:#9E680C;text-decoration:underline;cursor:pointer;font-size:0.85rem;padding:0;">Run scope-trigger check now</button>

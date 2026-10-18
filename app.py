@@ -10,6 +10,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 import db
 import policy
 import situations
+import work_status
 from integrations import pandadoc, financial_cents, resend_email, google_translate, supabase_auth
 
 app = Flask(__name__)
@@ -18,6 +19,7 @@ app.jinja_env.filters["language_name"] = google_translate.language_name
 app.jinja_env.globals["policy"] = policy
 
 db.init_db()
+work_status.init_tables()
 
 resend.api_key = os.environ.get("RESEND_API_KEY")
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -667,6 +669,7 @@ def progress():
         all_complete=(len(remaining) == 0),
         client_status=client["status"],
         nps_submitted=db.has_nps_response(client_id),
+        work_trackers=work_status.trackers_for_client(client_id),
     )
 
 
@@ -771,6 +774,97 @@ def dashboard_send_digest():
     except Exception as e:
         flash(f"Couldn't send digest: {e}")
     return redirect(url_for("dashboard"))
+
+
+# --- Client work status (where the return stands) ---------------------------
+
+def _status_link(token):
+    base = os.environ.get("APP_BASE_URL")
+    if base:
+        return base.rstrip("/") + url_for("client_work_status", token=token)
+    return url_for("client_work_status", token=token, _external=True)
+
+
+@app.route("/status/<token>")
+def client_work_status(token):
+    """Private link a client can open from any device to see their status."""
+    tracker = work_status.get_tracker_by_token(token)
+    if not tracker:
+        return render_template("work_status_missing.html"), 404
+    return render_template("work_status.html", tracker=tracker)
+
+
+@app.route("/dashboard/status")
+@require_admin
+def dashboard_status():
+    return render_template(
+        "work_status_admin.html",
+        trackers=work_status.all_trackers(),
+        stages=work_status.STAGES,
+        default_tax_year=datetime.utcnow().year - 1,
+        status_link=_status_link,
+    )
+
+
+@app.route("/dashboard/status/create", methods=["POST"])
+@require_admin
+def dashboard_status_create():
+    full_name = request.form.get("full_name", "").strip()
+    email = request.form.get("email", "").strip()
+    business_name = request.form.get("business_name", "").strip()
+    try:
+        tax_year = int(request.form.get("tax_year", datetime.utcnow().year - 1))
+    except ValueError:
+        tax_year = datetime.utcnow().year - 1
+    if not (full_name and email and business_name):
+        flash("Name, email and business name are all required.")
+        return redirect(url_for("dashboard_status"))
+
+    client = db.get_client_by_email(email)
+    if not client:
+        client_id = db.create_client()
+        db.set_client_contact(client_id, full_name, email)
+        client = db.get_client(client_id)
+
+    tracker_id = work_status.create_tracker(client["id"], business_name, tax_year, session.get("admin_email"))
+    tracker = work_status.get_tracker(tracker_id)
+    if request.form.get("notify"):
+        try:
+            work_status.send_status_email(email, client.get("full_name"), tracker, _status_link(tracker["token"]))
+        except Exception as e:
+            flash(f"Tracker created, but the email didn't send: {e}")
+    flash(f"Tracking started for {business_name} ({tax_year}).")
+    return redirect(url_for("dashboard_status"))
+
+
+@app.route("/dashboard/status/<tracker_id>/update", methods=["POST"])
+@require_admin
+def dashboard_status_update(tracker_id):
+    tracker = work_status.get_tracker(tracker_id)
+    if not tracker:
+        flash("That tracker wasn't found.")
+        return redirect(url_for("dashboard_status"))
+    stage = request.form.get("stage")
+    note = request.form.get("note", "").strip()
+    try:
+        work_status.add_event(tracker_id, stage, note, session.get("admin_email"))
+    except ValueError:
+        flash("Please choose a valid status.")
+        return redirect(url_for("dashboard_status"))
+
+    tracker = work_status.get_tracker(tracker_id)
+    client = db.get_client(tracker["client_id"]) or {}
+    if request.form.get("notify") and client.get("email"):
+        try:
+            work_status.send_status_email(
+                client["email"], client.get("full_name"), tracker, _status_link(tracker["token"])
+            )
+            flash(f"{tracker['business_name']} moved to {tracker['current_label']}. Client emailed.")
+        except Exception as e:
+            flash(f"Status updated, but the email didn't send: {e}")
+    else:
+        flash(f"{tracker['business_name']} moved to {tracker['current_label']}.")
+    return redirect(url_for("dashboard_status"))
 
 
 if __name__ == "__main__":

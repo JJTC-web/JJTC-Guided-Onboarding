@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Client Work Status{% endblock %}
+{% block content %}
+<div style="max-width:100%;">
+<h1>Client Work Status</h1>
+<p class="subtitle">Move each return forward. Clients see it on their status page and get an email when you check "Email client."</p>
+
+{% set stage_order = stages | map(attribute=0) | list %}
+{% for t in trackers %}
+  <div style="padding:16px 0;border-bottom:1px solid #eee;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div>
+        <div class="step-title">{{ t.business_name }} &middot; {{ t.tax_year }}</div>
+        <div class="step-desc">{{ t.full_name or 'Client' }} &middot; {{ t.email or 'no email' }}</div>
+      </div>
+      <span class="badge {{ 'badge-complete' if t.current == 'filed' else 'badge-action' }}">{{ t.current_label }}</span>
+    </div>
+    <div class="step-desc" style="margin-top:4px;">
+      Updated {{ t.updated_at[:10] }}{% if t.latest_note %} &middot; Last note: {{ t.latest_note }}{% endif %}
+    </div>
+
+    {% if t.current != 'filed' %}
+      {% set next_index = stage_order.index(t.current) + 1 %}
+      <form method="POST" action="{{ url_for('dashboard_status_update', tracker_id=t.id) }}" style="margin-top:10px;">
+        <select name="stage" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:0.95rem;font-family:inherit;background:#fff;">
+          {% for key, label, _ in stages %}
+            <option value="{{ key }}" {% if loop.index0 == next_index %}selected{% endif %}>{{ label }}{% if key == t.current %} (current){% endif %}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="note" placeholder="Note the client will see (optional), e.g. Waiting on Main St December statement" style="margin-top:8px;">
+        <label style="font-weight:400;display:flex;gap:8px;align-items:center;margin-top:8px;">
+          <input type="checkbox" name="notify" value="1" checked> Email client
+        </label>
+        <button type="submit" style="margin-top:10px;padding:10px;">Update Status</button>
+      </form>
+    {% endif %}
+    <p style="font-size:0.75rem;margin:8px 0 0;word-break:break-all;color:#6b6b6b;">
+      Client link: {{ status_link(t.token) }}
+    </p>
+  </div>
+{% else %}
+  <p style="color:#6b6b6b;font-size:0.9rem;">No returns being tracked yet.</p>
+{% endfor %}
+
+<p style="font-weight:600;margin-top:28px;">Start tracking a return</p>
+<p class="step-desc">One per business, per tax year. It starts at "Documents received."</p>
+<form method="POST" action="{{ url_for('dashboard_status_create') }}">
+  <label>Client full name</label>
+  <input type="text" name="full_name" required>
+  <label>Client email</label>
+  <input type="email" name="email" required>
+  <label>Business name</label>
+  <input type="text" name="business_name" required>
+  <label>Tax year</label>
+  <input type="text" name="tax_year" value="{{ default_tax_year }}" required>
+  <label style="font-weight:400;display:flex;gap:8px;align-items:center;">
+    <input type="checkbox" name="notify" value="1" checked> Email client that we received their documents
+  </label>
+  <button type="submit" class="btn-gold">Start Tracking</button>
+</form>
+
+<p style="margin-top:24px;"><a href="{{ url_for('dashboard') }}">&larr; Back to dashboard</a></p>
+</div>
+{% endblock %}

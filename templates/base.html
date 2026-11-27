@@ -21,8 +21,15 @@
     background: var(--bg);
     color: var(--text);
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     padding: 32px 16px;
+  }
+  .site-footer {
+    text-align: center;
+    margin-top: 16px;
+    max-width: 480px;
+    width: 100%;
   }
   .card {
     background: var(--card);
@@ -82,13 +89,15 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </div>
-<div style="text-align:center;margin-top:16px;font-size:0.8rem;">
-  <a href="https://www.jjtc.info" target="_blank" style="color:#9E680C;">Visit our website</a>
-</div>
-<div style="text-align:center;margin-top:12px;font-size:0.7rem;color:var(--muted);max-width:480px;">
-  &copy; 2026 Jehovah Jireh Tax Consultants. All materials and information on this
-  application are copyrighted and may not be used, duplicated, or shared outside of
-  this application without express permission.
-</div>
+<footer class="site-footer">
+  <div style="font-size:0.8rem;">
+    <a href="https://www.jjtc.info" target="_blank" style="color:#9E680C;">Visit our website</a>
+  </div>
+  <div style="margin-top:12px;font-size:0.7rem;color:var(--muted);">
+    &copy; 2026 Jehovah Jireh Tax Consultants. All materials and information on this
+    application are copyrighted and may not be used, duplicated, or shared outside of
+    this application without express permission.
+  </div>
+</footer>
 </body>
 </html>
